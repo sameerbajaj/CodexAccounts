@@ -19,6 +19,27 @@ final class AccountsViewModel {
     var showingAddAccount = false
     var addAccountStatus: AddAccountStatus = .idle
     var detectedUntrackedEmail: String? = nil
+    var sortMode: SortMode = .pinned
+
+    // MARK: - Sort
+
+    enum SortMode: String, CaseIterable, Identifiable {
+        case pinned = "Pinned"
+        case nearestReset = "Reset Soon"
+        case lowestUsage = "Most Used"
+        case recentActivity = "Recent Activity"
+
+        var id: String { rawValue }
+
+        var icon: String {
+            switch self {
+            case .pinned: return "pin"
+            case .nearestReset: return "clock"
+            case .lowestUsage: return "chart.bar.xaxis"
+            case .recentActivity: return "bolt"
+            }
+        }
+    }
 
     // MARK: - Private
 
@@ -28,9 +49,43 @@ final class AccountsViewModel {
 
     // MARK: - Computed
 
-    /// Lowest remaining percent across all accounts (for menu bar display)
+    /// Accounts sorted according to current sort mode (pinned always first)
+    var sortedAccounts: [CodexAccount] {
+        let pinned = accounts.filter(\.isPinned)
+        let unpinned = accounts.filter { !$0.isPinned }
+
+        let sortedUnpinned: [CodexAccount]
+        switch sortMode {
+        case .pinned:
+            sortedUnpinned = unpinned.sorted { $0.addedAt < $1.addedAt }
+        case .nearestReset:
+            sortedUnpinned = unpinned.sorted { a, b in
+                let ra = usageData[a.id]?.resetAt ?? .distantFuture
+                let rb = usageData[b.id]?.resetAt ?? .distantFuture
+                return ra < rb
+            }
+        case .lowestUsage:
+            sortedUnpinned = unpinned.sorted { a, b in
+                let ra = usageData[a.id]?.remainingPercent ?? 100
+                let rb = usageData[b.id]?.remainingPercent ?? 100
+                return ra < rb  // lowest remaining first = most used first
+            }
+        case .recentActivity:
+            sortedUnpinned = unpinned.sorted { a, b in
+                let da = usageData[a.id]?.lastActivityAt ?? .distantPast
+                let db = usageData[b.id]?.lastActivityAt ?? .distantPast
+                return da > db  // most recent first
+            }
+        }
+
+        return pinned + sortedUnpinned
+    }
+
+    /// Remaining % shown in the menu bar — uses pinned accounts if any, else all
     var lowestRemaining: Double? {
-        let values = usageData.values.map(\.lowestRemainingPercent)
+        let pinnedAccounts = accounts.filter(\.isPinned)
+        let source = pinnedAccounts.isEmpty ? accounts : pinnedAccounts
+        let values = source.compactMap { usageData[$0.id]?.remainingPercent }
         return values.min()
     }
 
@@ -96,10 +151,18 @@ final class AccountsViewModel {
 
     func refreshAccount(_ account: CodexAccount) async {
         accountStatuses[account.id] = .refreshing
+        let previousUsage = usageData[account.id]
 
         do {
             let result = try await CodexAPIService.fetchUsageWithRefresh(for: account)
-            usageData[account.id] = result.usage
+            // Build usage with activity tracking
+            var newUsage = result.usage
+            if let prev = previousUsage, prev.usedPercent != newUsage.usedPercent {
+                newUsage.lastActivityAt = Date()
+            } else {
+                newUsage.lastActivityAt = previousUsage?.lastActivityAt
+            }
+            usageData[account.id] = newUsage
 
             // Update stored tokens if they were refreshed
             if let updated = result.updatedAccount {
@@ -243,5 +306,13 @@ final class AccountsViewModel {
 
     func reauthAccount(_ account: CodexAccount) {
         startAddingAccount()
+    }
+
+    // MARK: - Pinning
+
+    func togglePin(_ account: CodexAccount) {
+        guard let idx = accounts.firstIndex(where: { $0.id == account.id }) else { return }
+        accounts[idx].isPinned.toggle()
+        AccountStore.save(accounts)
     }
 }

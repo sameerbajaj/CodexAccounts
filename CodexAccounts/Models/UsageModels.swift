@@ -117,18 +117,22 @@ struct AuthFileContents: Decodable {
 // MARK: - Convenience
 
 extension AccountUsage {
-    init(from response: CodexUsageResponse) {
+    init(from response: CodexUsageResponse, previous: AccountUsage? = nil) {
         let primary = response.rateLimit?.primaryWindow
-        let secondary = response.rateLimit?.secondaryWindow
 
-        self.fiveHourUsedPercent = Double(primary?.usedPercent ?? 0)
-        self.fiveHourResetAt = primary.map { Date(timeIntervalSince1970: TimeInterval($0.resetAt)) }
-        self.weeklyUsedPercent = Double(secondary?.usedPercent ?? 0)
-        self.weeklyResetAt = secondary.map { Date(timeIntervalSince1970: TimeInterval($0.resetAt)) }
+        self.usedPercent = Double(primary?.usedPercent ?? 0)
+        self.resetAt = primary.map { Date(timeIntervalSince1970: TimeInterval($0.resetAt)) }
         self.creditsBalance = response.credits?.balance
         self.hasCredits = response.credits?.hasCredits ?? false
         self.isUnlimited = response.credits?.unlimited ?? false
         self.lastUpdated = Date()
         self.error = nil
+
+        // Track activity: if used% changed from previous, mark now as last activity
+        if let prev = previous, prev.usedPercent != self.usedPercent {
+            self.lastActivityAt = Date()
+        } else {
+            self.lastActivityAt = previous?.lastActivityAt
+        }
     }
 }

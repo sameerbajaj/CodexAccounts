@@ -17,6 +17,12 @@ struct CodexAccount: Identifiable, Codable, Hashable {
     var accountId: String?
     var lastTokenRefresh: Date?
     let addedAt: Date
+    var isPinned: Bool
+
+    enum CodingKeys: String, CodingKey {
+        case id, email, planType, accessToken, refreshToken
+        case idToken, accountId, lastTokenRefresh, addedAt, isPinned
+    }
 
     init(
         email: String,
@@ -25,7 +31,8 @@ struct CodexAccount: Identifiable, Codable, Hashable {
         refreshToken: String,
         idToken: String? = nil,
         accountId: String? = nil,
-        lastTokenRefresh: Date? = nil
+        lastTokenRefresh: Date? = nil,
+        isPinned: Bool = false
     ) {
         self.id = email.lowercased()
         self.email = email
@@ -36,6 +43,27 @@ struct CodexAccount: Identifiable, Codable, Hashable {
         self.accountId = accountId
         self.lastTokenRefresh = lastTokenRefresh
         self.addedAt = Date()
+        self.isPinned = isPinned
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decode(String.self, forKey: .id)
+        email = try c.decode(String.self, forKey: .email)
+        planType = try c.decode(String.self, forKey: .planType)
+        accessToken = try c.decode(String.self, forKey: .accessToken)
+        refreshToken = try c.decode(String.self, forKey: .refreshToken)
+        idToken = try c.decodeIfPresent(String.self, forKey: .idToken)
+        accountId = try c.decodeIfPresent(String.self, forKey: .accountId)
+        lastTokenRefresh = try c.decodeIfPresent(Date.self, forKey: .lastTokenRefresh)
+        addedAt = try c.decode(Date.self, forKey: .addedAt)
+        isPinned = (try? c.decode(Bool.self, forKey: .isPinned)) ?? false
+    }
+
+    /// First 8 chars of account UUID for display
+    var shortAccountId: String? {
+        guard let accountId, !accountId.isEmpty else { return nil }
+        return String(accountId.prefix(8))
     }
 
     var planDisplayName: String {
@@ -53,38 +81,33 @@ struct CodexAccount: Identifiable, Codable, Hashable {
 }
 
 struct AccountUsage: Equatable {
-    var fiveHourUsedPercent: Double
-    var fiveHourResetAt: Date?
-    var weeklyUsedPercent: Double
-    var weeklyResetAt: Date?
+    /// Codex usage (primary rate-limit window) — the only bar we show
+    var usedPercent: Double
+    var resetAt: Date?
     var creditsBalance: Double?
     var hasCredits: Bool
     var isUnlimited: Bool
     var lastUpdated: Date
     var error: String?
+    /// Tracks when usage % last changed (for "recently active" sort)
+    var lastActivityAt: Date?
 
-    var fiveHourRemainingPercent: Double {
-        max(0, 100 - fiveHourUsedPercent)
+    var remainingPercent: Double {
+        max(0, 100 - usedPercent)
     }
 
-    var weeklyRemainingPercent: Double {
-        max(0, 100 - weeklyUsedPercent)
-    }
-
-    var lowestRemainingPercent: Double {
-        min(fiveHourRemainingPercent, weeklyRemainingPercent)
-    }
+    /// Alias kept so existing references compile
+    var lowestRemainingPercent: Double { remainingPercent }
 
     static let placeholder = AccountUsage(
-        fiveHourUsedPercent: 0,
-        fiveHourResetAt: nil,
-        weeklyUsedPercent: 0,
-        weeklyResetAt: nil,
+        usedPercent: 0,
+        resetAt: nil,
         creditsBalance: nil,
         hasCredits: false,
         isUnlimited: false,
         lastUpdated: Date(),
-        error: nil
+        error: nil,
+        lastActivityAt: nil
     )
 }
 

@@ -33,7 +33,7 @@ struct MenuBarPopover: View {
             Divider().opacity(0.5)
             footer
         }
-        .frame(width: 360)
+        .frame(width: 340)
         .animation(.easeInOut(duration: 0.2), value: viewModel.showingAddAccount)
         .animation(.easeInOut(duration: 0.2), value: viewModel.accounts.count)
         .task { viewModel.setup() }
@@ -75,8 +75,8 @@ struct MenuBarPopover: View {
                 .help("Refresh all accounts")
             }
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 12)
+        .padding(.horizontal, 14)
+        .padding(.vertical, 10)
     }
 
     // MARK: - Main Content
@@ -88,9 +88,9 @@ struct MenuBarPopover: View {
                 detectedBanner(email: email)
             }
 
-            ScrollView {
-                LazyVStack(spacing: 8) {
-                    ForEach(viewModel.accounts) { account in
+            ScrollView(.vertical, showsIndicators: false) {
+                LazyVStack(spacing: 4) {
+                    ForEach(viewModel.sortedAccounts) { account in
                         AccountCardView(
                             account: account,
                             usage: viewModel.usageData[account.id],
@@ -99,12 +99,13 @@ struct MenuBarPopover: View {
                                 Task { await viewModel.refreshAccount(account) }
                             },
                             onRemove: { viewModel.removeAccount(account) },
-                            onReauth: { viewModel.reauthAccount(account) }
+                            onReauth: { viewModel.reauthAccount(account) },
+                            onTogglePin: { viewModel.togglePin(account) }
                         )
                     }
                 }
-                .padding(.horizontal, 12)
-                .padding(.vertical, 8)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 6)
             }
             .frame(maxHeight: 520)
         }
@@ -170,7 +171,7 @@ struct MenuBarPopover: View {
             }
             .buttonStyle(.plain)
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 10)
+        .padding(.horizontal, 14)
+        .padding(.vertical, 8)
     }
 }

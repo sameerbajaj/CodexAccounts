@@ -13,43 +13,31 @@ struct UsageMeterView: View {
     let resetAt: Date?
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 3) {
-            HStack(spacing: 6) {
-                Text(label)
-                    .font(.system(size: 10, weight: .medium))
-                    .foregroundStyle(.secondary)
-                    .frame(width: 32, alignment: .leading)
+        HStack(spacing: 6) {
+            Text(label)
+                .font(.system(size: 9.5, weight: .medium))
+                .foregroundStyle(.secondary)
+                .frame(width: 68, alignment: .leading)
+                .lineLimit(1)
 
-                // Progress bar
-                GeometryReader { proxy in
-                    ZStack(alignment: .leading) {
-                        // Track
-                        RoundedRectangle(cornerRadius: 3)
-                            .fill(.quaternary.opacity(0.6))
+            // Progress bar
+            GeometryReader { proxy in
+                ZStack(alignment: .leading) {
+                    RoundedRectangle(cornerRadius: 2.5)
+                        .fill(Color.primary.opacity(0.07))
 
-                        // Fill
-                        RoundedRectangle(cornerRadius: 3)
-                            .fill(barGradient)
-                            .frame(width: max(0, proxy.size.width * CGFloat(clampedPercent / 100)))
-                            .animation(.easeInOut(duration: 0.6), value: remainingPercent)
-                    }
+                    RoundedRectangle(cornerRadius: 2.5)
+                        .fill(barGradient)
+                        .frame(width: max(0, proxy.size.width * CGFloat(clampedPercent / 100)))
+                        .animation(.easeInOut(duration: 0.6), value: remainingPercent)
                 }
-                .frame(height: 7)
-
-                // Percentage
-                Text("\(Int(clampedPercent))%")
-                    .font(.system(size: 10, weight: .bold, design: .monospaced))
-                    .foregroundStyle(percentColor)
-                    .frame(width: 32, alignment: .trailing)
             }
+            .frame(height: 6)
 
-            // Reset countdown
-            if let resetAt {
-                Text("Resets \(resetAt.resetDescription)")
-                    .font(.system(size: 9))
-                    .foregroundStyle(.quaternary)
-                    .padding(.leading, 38)
-            }
+            Text("\(Int(clampedPercent))%")
+                .font(.system(size: 10, weight: .bold, design: .monospaced))
+                .foregroundStyle(percentColor)
+                .frame(width: 32, alignment: .trailing)
         }
     }
 
@@ -62,7 +50,7 @@ struct UsageMeterView: View {
     private var barGradient: LinearGradient {
         if remainingPercent > 40 {
             return LinearGradient(
-                colors: [.green, .green.opacity(0.7)],
+                colors: [.green.opacity(0.85), .green.opacity(0.6)],
                 startPoint: .leading, endPoint: .trailing
             )
         } else if remainingPercent > 15 {

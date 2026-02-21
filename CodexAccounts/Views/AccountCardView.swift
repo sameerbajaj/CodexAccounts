@@ -14,29 +14,40 @@ struct AccountCardView: View {
     let onRefresh: () -> Void
     let onRemove: () -> Void
     let onReauth: () -> Void
+    let onTogglePin: () -> Void
 
     @State private var isHovering = false
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            // Header: Email + Plan badge + Actions
-            HStack(alignment: .center, spacing: 8) {
+        VStack(alignment: .leading, spacing: 5) {
+            // Header: Email + Plan badge + Pin + Actions
+            HStack(alignment: .center, spacing: 6) {
                 // Status dot
                 Circle()
                     .fill(statusDotColor)
-                    .frame(width: 6, height: 6)
+                    .frame(width: 5, height: 5)
 
-                VStack(alignment: .leading, spacing: 1) {
-                    Text(account.email)
-                        .font(.system(size: 12, weight: .medium))
-                        .foregroundStyle(.primary)
-                        .lineLimit(1)
-                        .truncationMode(.middle)
-                }
+                Text(account.email)
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(.primary)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
 
                 Spacer()
 
                 PlanBadge(plan: account.planType)
+
+                // Pin indicator
+                if account.isPinned || isHovering {
+                    Button(action: onTogglePin) {
+                        Image(systemName: account.isPinned ? "pin.fill" : "pin")
+                            .font(.system(size: 9))
+                            .foregroundStyle(account.isPinned ? Color.orange : Color.secondary)
+                    }
+                    .buttonStyle(.plain)
+                    .transition(.opacity)
+                    .help(account.isPinned ? "Unpin" : "Pin to top")
+                }
 
                 if isHovering {
                     Menu {
@@ -51,12 +62,12 @@ struct AccountCardView: View {
                             Label("Remove Account", systemImage: "trash")
                         }
                     } label: {
-                        Image(systemName: "ellipsis.circle")
-                            .font(.system(size: 12))
-                            .foregroundStyle(.secondary)
+                        Image(systemName: "ellipsis")
+                            .font(.system(size: 10))
+                            .foregroundStyle(.tertiary)
                     }
                     .menuStyle(.borderlessButton)
-                    .frame(width: 20)
+                    .frame(width: 16)
                     .transition(.opacity)
                 }
             }
@@ -72,7 +83,8 @@ struct AccountCardView: View {
                 loadingState
             }
         }
-        .padding(12)
+        .padding(.horizontal, 10)
+        .padding(.vertical, 8)
         .background(cardBackground)
         .overlay(cardBorder)
         .onHover { isHovering = $0 }
@@ -85,64 +97,112 @@ struct AccountCardView: View {
     private func usageContent(_ usage: AccountUsage) -> some View {
         // Error banner
         if let error = usage.error {
-            HStack(spacing: 4) {
+            HStack(spacing: 3) {
                 Image(systemName: "exclamationmark.triangle.fill")
-                    .font(.system(size: 9))
+                    .font(.system(size: 8))
                     .foregroundStyle(.orange)
                 Text(error)
-                    .font(.system(size: 10))
+                    .font(.system(size: 9))
                     .foregroundStyle(.orange)
                     .lineLimit(1)
             }
         }
 
-        // Usage meters
-        UsageMeterView(
-            label: "5h",
-            remainingPercent: usage.fiveHourRemainingPercent,
-            resetAt: usage.fiveHourResetAt
-        )
+        // Usage meters with dynamic labels
+        VStack(alignment: .leading, spacing: 3) {
+            UsageMeterView(
+                label: usage.primaryWindowLabel,
+                remainingPercent: usage.fiveHourRemainingPercent,
+                resetAt: usage.fiveHourResetAt
+            )
 
-        UsageMeterView(
-            label: "Week",
-            remainingPercent: usage.weeklyRemainingPercent,
-            resetAt: usage.weeklyResetAt
-        )
+            UsageMeterView(
+                label: usage.secondaryWindowLabel,
+                remainingPercent: usage.weeklyRemainingPercent,
+                resetAt: usage.weeklyResetAt
+            )
+        }
 
-        // Credits + Last updated row
+        // Reset times row — high contrast
+        HStack(spacing: 0) {
+            if let resetAt = usage.fiveHourResetAt {
+                HStack(spacing: 2) {
+                    Image(systemName: "arrow.counterclockwise")
+                        .font(.system(size: 7))
+                    Text(usage.primaryWindowLabel)
+                        .font(.system(size: 9, weight: .medium))
+                    Text(resetAt.resetDescription)
+                        .font(.system(size: 9))
+                }
+                .foregroundStyle(.secondary)
+            }
+
+            if usage.fiveHourResetAt != nil && usage.weeklyResetAt != nil {
+                Text("  ·  ")
+                    .font(.system(size: 8))
+                    .foregroundStyle(.quaternary)
+            }
+
+            if let resetAt = usage.weeklyResetAt {
+                HStack(spacing: 2) {
+                    Text(usage.secondaryWindowLabel)
+                        .font(.system(size: 9, weight: .medium))
+                    Text(resetAt.resetDescription)
+                        .font(.system(size: 9))
+                }
+                .foregroundStyle(.secondary)
+            }
+
+            Spacer()
+        }
+
+        // Footer: Credits + Profile ID + Last updated
         HStack(spacing: 0) {
             if usage.isUnlimited {
-                HStack(spacing: 3) {
+                HStack(spacing: 2) {
                     Image(systemName: "infinity")
-                        .font(.system(size: 8))
+                        .font(.system(size: 7))
                     Text("Unlimited")
-                        .font(.system(size: 10))
+                        .font(.system(size: 9))
                 }
                 .foregroundStyle(.purple)
             } else if usage.hasCredits, let balance = usage.creditsBalance {
-                HStack(spacing: 3) {
+                HStack(spacing: 2) {
                     Image(systemName: "dollarsign.circle")
-                        .font(.system(size: 9))
+                        .font(.system(size: 8))
                     Text(String(format: "$%.2f", balance))
-                        .font(.system(size: 10, weight: .medium, design: .monospaced))
+                        .font(.system(size: 9, weight: .medium, design: .monospaced))
                 }
                 .foregroundStyle(.green.opacity(0.8))
+            }
+
+            // Profile UUID
+            if let shortId = account.shortAccountId {
+                if usage.hasCredits || usage.isUnlimited {
+                    Text("  ·  ")
+                        .font(.system(size: 8))
+                        .foregroundStyle(.quaternary)
+                }
+                Text(shortId)
+                    .font(.system(size: 9, design: .monospaced))
+                    .foregroundStyle(.tertiary)
+                    .help(account.accountId ?? "")
             }
 
             Spacer()
 
             if case .refreshing = status {
-                HStack(spacing: 4) {
+                HStack(spacing: 3) {
                     ProgressView()
                         .controlSize(.mini)
-                    Text("Updating...")
-                        .font(.system(size: 9))
+                    Text("...")
+                        .font(.system(size: 8))
                         .foregroundStyle(.tertiary)
                 }
             } else {
                 Text(usage.lastUpdated.relativeDescription)
                     .font(.system(size: 9))
-                    .foregroundStyle(.quaternary)
+                    .foregroundStyle(.tertiary)
             }
         }
     }
@@ -150,22 +210,22 @@ struct AccountCardView: View {
     // MARK: - States
 
     private var reauthPrompt: some View {
-        VStack(spacing: 6) {
-            HStack(spacing: 4) {
+        VStack(spacing: 4) {
+            HStack(spacing: 3) {
                 Image(systemName: "exclamationmark.triangle.fill")
-                    .font(.system(size: 10))
+                    .font(.system(size: 9))
                     .foregroundStyle(.orange)
                 Text("Token expired")
-                    .font(.system(size: 11, weight: .medium))
+                    .font(.system(size: 10, weight: .medium))
                     .foregroundStyle(.orange)
             }
 
             Button(action: onReauth) {
-                HStack(spacing: 4) {
+                HStack(spacing: 3) {
                     Image(systemName: "key.fill")
-                        .font(.system(size: 9))
+                        .font(.system(size: 8))
                     Text("Re-authenticate")
-                        .font(.system(size: 11, weight: .medium))
+                        .font(.system(size: 10, weight: .medium))
                 }
                 .frame(maxWidth: .infinity)
             }
@@ -176,15 +236,15 @@ struct AccountCardView: View {
     }
 
     private var loadingState: some View {
-        HStack(spacing: 6) {
+        HStack(spacing: 4) {
             ProgressView()
-                .controlSize(.small)
-            Text("Loading usage data...")
-                .font(.system(size: 11))
+                .controlSize(.mini)
+            Text("Loading...")
+                .font(.system(size: 10))
                 .foregroundStyle(.secondary)
         }
         .frame(maxWidth: .infinity, alignment: .center)
-        .padding(.vertical, 8)
+        .padding(.vertical, 4)
     }
 
     // MARK: - Styling
@@ -209,13 +269,20 @@ struct AccountCardView: View {
     }
 
     private var cardBackground: some View {
-        RoundedRectangle(cornerRadius: 10)
-            .fill(.fill.opacity(isHovering ? 0.7 : 0.4))
+        RoundedRectangle(cornerRadius: 8)
+            .fill(.fill.opacity(account.isPinned ? 0.6 : (isHovering ? 0.5 : 0.3)))
     }
 
     private var cardBorder: some View {
-        RoundedRectangle(cornerRadius: 10)
-            .strokeBorder(.separator.opacity(isHovering ? 0.5 : 0.25), lineWidth: 0.5)
+        RoundedRectangle(cornerRadius: 8)
+            .strokeBorder(borderColor, lineWidth: 0.5)
+    }
+
+    private var borderColor: Color {
+        if account.isPinned {
+            return .orange.opacity(0.25)
+        }
+        return isHovering ? Color.primary.opacity(0.12) : Color.primary.opacity(0.06)
     }
 }
 
