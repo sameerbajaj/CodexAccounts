@@ -19,270 +19,277 @@ struct AccountCardView: View {
     @State private var isHovering = false
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 5) {
-            // Header: Email + Plan badge + Pin + Actions
-            HStack(alignment: .center, spacing: 6) {
-                // Status dot
-                Circle()
-                    .fill(statusDotColor)
-                    .frame(width: 5, height: 5)
+        VStack(alignment: .leading, spacing: 0) {
+            // Header row
+            HStack(spacing: 8) {
+                statusIndicator
+                    .frame(width: 3)
 
-                Text(account.email)
-                    .font(.system(size: 11, weight: .medium))
-                    .foregroundStyle(.primary)
-                    .lineLimit(1)
-                    .truncationMode(.middle)
-
-                Spacer()
-
-                PlanBadge(plan: account.planType)
-
-                // Pin indicator
-                if account.isPinned || isHovering {
-                    Button(action: onTogglePin) {
-                        Image(systemName: account.isPinned ? "pin.fill" : "pin")
-                            .font(.system(size: 9))
-                            .foregroundStyle(account.isPinned ? Color.orange : Color.secondary)
+                VStack(alignment: .leading, spacing: 2) {
+                    headerRow
+                    if case .needsReauth = status {
+                        reauthRow
+                    } else if let usage {
+                        usageRows(usage)
+                    } else {
+                        loadingRow
                     }
-                    .buttonStyle(.plain)
-                    .transition(.opacity)
-                    .help(account.isPinned ? "Unpin" : "Pin to top")
                 }
-
-                if isHovering {
-                    Menu {
-                        Button(action: onRefresh) {
-                            Label("Refresh", systemImage: "arrow.clockwise")
-                        }
-                        Button(action: onReauth) {
-                            Label("Re-authenticate", systemImage: "key")
-                        }
-                        Divider()
-                        Button(role: .destructive, action: onRemove) {
-                            Label("Remove Account", systemImage: "trash")
-                        }
-                    } label: {
-                        Image(systemName: "ellipsis")
-                            .font(.system(size: 10))
-                            .foregroundStyle(.tertiary)
-                    }
-                    .menuStyle(.borderlessButton)
-                    .frame(width: 16)
-                    .transition(.opacity)
-                }
-            }
-
-            // Content based on status
-            if case .needsReauth = status {
-                reauthPrompt
-            } else if case .refreshing = status, usage == nil {
-                loadingState
-            } else if let usage {
-                usageContent(usage)
-            } else {
-                loadingState
+                .padding(.vertical, 11)
+                .padding(.trailing, 12)
             }
         }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 8)
         .background(cardBackground)
-        .overlay(cardBorder)
+        .clipShape(RoundedRectangle(cornerRadius: 9))
+        .overlay(
+            RoundedRectangle(cornerRadius: 9)
+                .strokeBorder(borderColor, lineWidth: 0.5)
+        )
         .onHover { isHovering = $0 }
         .animation(.easeInOut(duration: 0.15), value: isHovering)
     }
 
-    // MARK: - Usage Content
+    // MARK: - Status Indicator (left accent bar)
+
+    private var statusIndicator: some View {
+        Rectangle()
+            .fill(statusBarColor)
+            .frame(width: 3)
+            .clipShape(
+                UnevenRoundedRectangle(
+                    topLeadingRadius: 9,
+                    bottomLeadingRadius: 9,
+                    bottomTrailingRadius: 0,
+                    topTrailingRadius: 0
+                )
+            )
+    }
+
+    // MARK: - Header Row
+
+    private var headerRow: some View {
+        HStack(spacing: 6) {
+            Text(account.email)
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(.primary)
+                .lineLimit(1)
+                .truncationMode(.middle)
+
+            Spacer(minLength: 2)
+
+            if account.isPinned {
+                Image(systemName: "pin.fill")
+                    .font(.system(size: 8))
+                    .foregroundStyle(.orange.opacity(0.8))
+            }
+
+            PlanBadge(plan: account.planType)
+
+            if isHovering {
+                contextMenu
+            }
+        }
+    }
+
+    private var contextMenu: some View {
+        Menu {
+            Button(action: onTogglePin) {
+                Label(account.isPinned ? "Unpin" : "Pin to top",
+                      systemImage: account.isPinned ? "pin.slash" : "pin")
+            }
+            Button(action: onRefresh) {
+                Label("Refresh", systemImage: "arrow.clockwise")
+            }
+            Button(action: onReauth) {
+                Label("Re-authenticate", systemImage: "key")
+            }
+            Divider()
+            Button(role: .destructive, action: onRemove) {
+                Label("Remove Account", systemImage: "trash")
+            }
+        } label: {
+            Image(systemName: "ellipsis.circle")
+                .font(.system(size: 12))
+                .foregroundStyle(.secondary)
+        }
+        .menuStyle(.borderlessButton)
+        .frame(width: 20)
+        .transition(.opacity.combined(with: .scale(scale: 0.8)))
+    }
+
+    // MARK: - Usage Rows
 
     @ViewBuilder
-    private func usageContent(_ usage: AccountUsage) -> some View {
-        // Error banner
+    private func usageRows(_ usage: AccountUsage) -> some View {
+        UsageMeterView(
+            remainingPercent: usage.remainingPercent
+        )
+        .padding(.top, 5)
+
+        HStack(spacing: 0) {
+            // Reset time
+            if let resetAt = usage.resetAt {
+                HStack(spacing: 3) {
+                    Image(systemName: "arrow.clockwise")
+                        .font(.system(size: 8))
+                    Text("Resets \(resetAt.resetDescription)")
+                        .font(.system(size: 10))
+                }
+                .foregroundStyle(.secondary)
+            }
+
+            Spacer()
+
+            // Profile UUID + timestamp
+            Group {
+                if let shortId = account.shortAccountId {
+                    Text(shortId)
+                        .font(.system(size: 9, design: .monospaced))
+                        .foregroundStyle(Color.primary.opacity(0.3))
+                        .help(account.accountId ?? "")
+                }
+                if case .refreshing = status {
+                    ProgressView().controlSize(.mini).padding(.leading, 3)
+                } else {
+                    Text("  \(usage.lastUpdated.relativeDescription)")
+                        .font(.system(size: 9))
+                        .foregroundStyle(Color.primary.opacity(0.28))
+                }
+            }
+        }
+        .padding(.top, 5)
+
+        // Error
         if let error = usage.error {
-            HStack(spacing: 3) {
+            HStack(spacing: 4) {
                 Image(systemName: "exclamationmark.triangle.fill")
-                    .font(.system(size: 8))
+                    .font(.system(size: 9))
                     .foregroundStyle(.orange)
                 Text(error)
                     .font(.system(size: 9))
                     .foregroundStyle(.orange)
-                    .lineLimit(1)
+                    .lineLimit(2)
             }
-        }
-
-        // Usage meters with dynamic labels
-        VStack(alignment: .leading, spacing: 3) {
-            UsageMeterView(
-                label: usage.primaryWindowLabel,
-                remainingPercent: usage.fiveHourRemainingPercent,
-                resetAt: usage.fiveHourResetAt
-            )
-
-            UsageMeterView(
-                label: usage.secondaryWindowLabel,
-                remainingPercent: usage.weeklyRemainingPercent,
-                resetAt: usage.weeklyResetAt
-            )
-        }
-
-        // Reset times row — high contrast
-        HStack(spacing: 0) {
-            if let resetAt = usage.fiveHourResetAt {
-                HStack(spacing: 2) {
-                    Image(systemName: "arrow.counterclockwise")
-                        .font(.system(size: 7))
-                    Text(usage.primaryWindowLabel)
-                        .font(.system(size: 9, weight: .medium))
-                    Text(resetAt.resetDescription)
-                        .font(.system(size: 9))
-                }
-                .foregroundStyle(.secondary)
-            }
-
-            if usage.fiveHourResetAt != nil && usage.weeklyResetAt != nil {
-                Text("  ·  ")
-                    .font(.system(size: 8))
-                    .foregroundStyle(.quaternary)
-            }
-
-            if let resetAt = usage.weeklyResetAt {
-                HStack(spacing: 2) {
-                    Text(usage.secondaryWindowLabel)
-                        .font(.system(size: 9, weight: .medium))
-                    Text(resetAt.resetDescription)
-                        .font(.system(size: 9))
-                }
-                .foregroundStyle(.secondary)
-            }
-
-            Spacer()
-        }
-
-        // Footer: Credits + Profile ID + Last updated
-        HStack(spacing: 0) {
-            if usage.isUnlimited {
-                HStack(spacing: 2) {
-                    Image(systemName: "infinity")
-                        .font(.system(size: 7))
-                    Text("Unlimited")
-                        .font(.system(size: 9))
-                }
-                .foregroundStyle(.purple)
-            } else if usage.hasCredits, let balance = usage.creditsBalance {
-                HStack(spacing: 2) {
-                    Image(systemName: "dollarsign.circle")
-                        .font(.system(size: 8))
-                    Text(String(format: "$%.2f", balance))
-                        .font(.system(size: 9, weight: .medium, design: .monospaced))
-                }
-                .foregroundStyle(.green.opacity(0.8))
-            }
-
-            // Profile UUID
-            if let shortId = account.shortAccountId {
-                if usage.hasCredits || usage.isUnlimited {
-                    Text("  ·  ")
-                        .font(.system(size: 8))
-                        .foregroundStyle(.quaternary)
-                }
-                Text(shortId)
-                    .font(.system(size: 9, design: .monospaced))
-                    .foregroundStyle(.tertiary)
-                    .help(account.accountId ?? "")
-            }
-
-            Spacer()
-
-            if case .refreshing = status {
-                HStack(spacing: 3) {
-                    ProgressView()
-                        .controlSize(.mini)
-                    Text("...")
-                        .font(.system(size: 8))
-                        .foregroundStyle(.tertiary)
-                }
-            } else {
-                Text(usage.lastUpdated.relativeDescription)
-                    .font(.system(size: 9))
-                    .foregroundStyle(.tertiary)
-            }
+            .padding(.top, 4)
         }
     }
 
-    // MARK: - States
+    // MARK: - Reauth Row
 
-    private var reauthPrompt: some View {
-        VStack(spacing: 4) {
-            HStack(spacing: 3) {
-                Image(systemName: "exclamationmark.triangle.fill")
-                    .font(.system(size: 9))
-                    .foregroundStyle(.orange)
-                Text("Token expired")
-                    .font(.system(size: 10, weight: .medium))
-                    .foregroundStyle(.orange)
-            }
-
+    private var reauthRow: some View {
+        HStack(spacing: 6) {
+            Image(systemName: "exclamationmark.triangle.fill")
+                .font(.system(size: 10))
+                .foregroundStyle(.orange)
+            Text("Session expired")
+                .font(.system(size: 11))
+                .foregroundStyle(.secondary)
+            Spacer()
             Button(action: onReauth) {
-                HStack(spacing: 3) {
-                    Image(systemName: "key.fill")
-                        .font(.system(size: 8))
-                    Text("Re-authenticate")
-                        .font(.system(size: 10, weight: .medium))
-                }
-                .frame(maxWidth: .infinity)
+                Text("Re-authenticate")
+                    .font(.system(size: 10, weight: .medium))
             }
             .buttonStyle(.borderedProminent)
             .tint(.orange)
-            .controlSize(.small)
+            .controlSize(.mini)
         }
+        .padding(.top, 5)
     }
 
-    private var loadingState: some View {
-        HStack(spacing: 4) {
-            ProgressView()
-                .controlSize(.mini)
+    // MARK: - Loading Row
+
+    private var loadingRow: some View {
+        HStack(spacing: 5) {
+            ProgressView().controlSize(.small)
             Text("Loading...")
-                .font(.system(size: 10))
+                .font(.system(size: 11))
                 .foregroundStyle(.secondary)
         }
-        .frame(maxWidth: .infinity, alignment: .center)
-        .padding(.vertical, 4)
+        .padding(.top, 5)
     }
 
-    // MARK: - Styling
+    // MARK: - Computed Colors
 
-    private var statusDotColor: Color {
+    private var statusBarColor: Color {
         switch status {
         case .active:
-            if let usage {
-                let lowest = usage.lowestRemainingPercent
-                if lowest > 40 { return .green }
-                else if lowest > 15 { return .orange }
-                else { return .red }
-            }
-            return .green
-        case .refreshing:
-            return .blue
-        case .needsReauth:
-            return .orange
-        case .error:
-            return .red
+            guard let usage else { return .green }
+            let r = usage.remainingPercent
+            if r > 40 { return .green }
+            else if r > 15 { return .orange }
+            else { return .red }
+        case .refreshing: return .blue.opacity(0.6)
+        case .needsReauth: return .orange
+        case .error: return .red
         }
     }
 
     private var cardBackground: some View {
-        RoundedRectangle(cornerRadius: 8)
-            .fill(.fill.opacity(account.isPinned ? 0.6 : (isHovering ? 0.5 : 0.3)))
-    }
-
-    private var cardBorder: some View {
-        RoundedRectangle(cornerRadius: 8)
-            .strokeBorder(borderColor, lineWidth: 0.5)
+        Group {
+            if account.isPinned {
+                Color.orange.opacity(isHovering ? 0.07 : 0.04)
+            } else {
+                Color.primary.opacity(isHovering ? 0.06 : 0.03)
+            }
+        }
     }
 
     private var borderColor: Color {
-        if account.isPinned {
-            return .orange.opacity(0.25)
+        if account.isPinned { return .orange.opacity(0.18) }
+        return Color.primary.opacity(isHovering ? 0.1 : 0.05)
+    }
+}
+
+// MARK: - Usage Meter (stand-alone bar + % label)
+
+struct UsageMeterView: View {
+    let remainingPercent: Double
+
+    private var clamped: Double { min(100, max(0, remainingPercent)) }
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Text("Codex Usage")
+                .font(.system(size: 10.5, weight: .medium))
+                .foregroundStyle(.secondary)
+                .frame(width: 80, alignment: .leading)
+
+            GeometryReader { proxy in
+                ZStack(alignment: .leading) {
+                    RoundedRectangle(cornerRadius: 3)
+                        .fill(Color.primary.opacity(0.07))
+                    RoundedRectangle(cornerRadius: 3)
+                        .fill(barGradient)
+                        .frame(width: max(0, proxy.size.width * CGFloat(clamped / 100)))
+                        .animation(.spring(duration: 0.5), value: remainingPercent)
+                }
+            }
+            .frame(height: 7)
+
+            Text("\(Int(clamped))%")
+                .font(.system(size: 12, weight: .bold, design: .monospaced))
+                .foregroundStyle(percentColor)
+                .frame(width: 36, alignment: .trailing)
         }
-        return isHovering ? Color.primary.opacity(0.12) : Color.primary.opacity(0.06)
+    }
+
+    private var barGradient: LinearGradient {
+        if remainingPercent > 40 {
+            return LinearGradient(colors: [.green, .green.opacity(0.7)],
+                                  startPoint: .leading, endPoint: .trailing)
+        } else if remainingPercent > 15 {
+            return LinearGradient(colors: [.orange, .yellow.opacity(0.8)],
+                                  startPoint: .leading, endPoint: .trailing)
+        } else {
+            return LinearGradient(colors: [.red, .red.opacity(0.7)],
+                                  startPoint: .leading, endPoint: .trailing)
+        }
+    }
+
+    private var percentColor: Color {
+        if remainingPercent > 40 { return .green }
+        else if remainingPercent > 15 { return .orange }
+        else { return .red }
     }
 }
 
@@ -293,7 +300,7 @@ struct PlanBadge: View {
 
     var body: some View {
         Text(displayName)
-            .font(.system(size: 9, weight: .bold))
+            .font(.system(size: 8.5, weight: .bold, design: .rounded))
             .foregroundStyle(.white)
             .padding(.horizontal, 7)
             .padding(.vertical, 2.5)
@@ -316,35 +323,17 @@ struct PlanBadge: View {
     private var badgeGradient: LinearGradient {
         switch plan.lowercased() {
         case "pro":
-            return LinearGradient(
-                colors: [.purple, .indigo],
-                startPoint: .leading, endPoint: .trailing
-            )
+            return LinearGradient(colors: [.purple, .indigo], startPoint: .leading, endPoint: .trailing)
         case "plus":
-            return LinearGradient(
-                colors: [.blue, .cyan],
-                startPoint: .leading, endPoint: .trailing
-            )
+            return LinearGradient(colors: [.blue, .cyan], startPoint: .leading, endPoint: .trailing)
         case "go":
-            return LinearGradient(
-                colors: [.teal, .mint],
-                startPoint: .leading, endPoint: .trailing
-            )
+            return LinearGradient(colors: [.teal, .mint], startPoint: .leading, endPoint: .trailing)
         case "team":
-            return LinearGradient(
-                colors: [.orange, .yellow],
-                startPoint: .leading, endPoint: .trailing
-            )
+            return LinearGradient(colors: [.orange, .yellow], startPoint: .leading, endPoint: .trailing)
         case "enterprise":
-            return LinearGradient(
-                colors: [.yellow, .orange],
-                startPoint: .leading, endPoint: .trailing
-            )
+            return LinearGradient(colors: [.yellow, .orange], startPoint: .leading, endPoint: .trailing)
         default:
-            return LinearGradient(
-                colors: [.gray, .gray.opacity(0.7)],
-                startPoint: .leading, endPoint: .trailing
-            )
+            return LinearGradient(colors: [.gray, .gray.opacity(0.7)], startPoint: .leading, endPoint: .trailing)
         }
     }
 }
