@@ -25,6 +25,35 @@ The app watches `~/.codex/auth.json`. When you run `codex auth` to switch accoun
 
 No third-party dependencies.
 
+## GitHub Release DMG (automatic)
+
+This repo is configured to build and attach a `.dmg` whenever you publish a GitHub Release.
+
+### One-time setup
+
+1. Push this repo (including `.github/workflows/release-dmg.yml` and `scripts/build-dmg.sh`) to GitHub.
+2. In GitHub, open **Settings → Actions → General** and keep workflow permissions set to allow read/write for contents (or leave default and rely on workflow-level `contents: write`).
+
+### Every release
+
+1. Push a tag (example: `v1.0.0`):
+
+```bash
+git tag v1.0.0
+git push origin v1.0.0
+```
+
+2. In GitHub, create and publish a Release from that tag.
+3. The workflow runs on macOS, builds the app, creates `CodexAccounts-v1.0.0.dmg`, and uploads it to that Release.
+
+You can also build a DMG locally with:
+
+```bash
+./scripts/build-dmg.sh v1.0.0
+```
+
+Output is written to `dist/`.
+
 ## Adding accounts
 
 The app detects your current account from `~/.codex/auth.json` on launch. To add another, click "Add Account" in the popover, then in a terminal run:

@@ -1,0 +1,28 @@
+name: Build and Upload DMG
+
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: write
+
+jobs:
+  build-dmg:
+    runs-on: macos-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Build DMG
+        run: |
+          chmod +x scripts/build-dmg.sh
+          scripts/build-dmg.sh "${{ github.event.release.tag_name }}"
+
+      - name: Upload DMG to release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG_NAME: ${{ github.event.release.tag_name }}
+        run: |
+          gh release upload "$TAG_NAME" "dist/CodexAccounts-$TAG_NAME.dmg" --clobber
