@@ -27,7 +27,10 @@ No third-party dependencies.
 
 ## GitHub Release DMG (automatic)
 
-This repo is configured to build and attach a `.dmg` whenever you publish a GitHub Release.
+This repo is configured to build and attach a `.dmg` automatically in two ways:
+
+1. **Every push to `main`** updates a rolling pre-release tag named `latest` with `CodexAccounts-latest.dmg`
+2. **Every published GitHub Release** uploads a versioned DMG like `CodexAccounts-v1.0.0.dmg`
 
 ### One-time setup
 
@@ -45,6 +48,16 @@ git push origin v1.0.0
 
 2. In GitHub, create and publish a Release from that tag.
 3. The workflow runs on macOS, builds the app, creates `CodexAccounts-v1.0.0.dmg`, and uploads it to that Release.
+
+### Install the newest build after any push
+
+After you push to `main`, Actions updates the `latest` pre-release automatically.
+
+Download from:
+
+- `https://github.com/<your-username>/<your-repo>/releases/tag/latest`
+
+Look for `CodexAccounts-latest.dmg`.
 
 ### One-command release (with `gh`)
 

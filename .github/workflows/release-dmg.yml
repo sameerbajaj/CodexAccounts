@@ -1,8 +1,11 @@
 name: Build and Upload DMG
 
 on:
+  push:
+    branches: [main]
   release:
     types: [published]
+  workflow_dispatch:
 
 permissions:
   contents: write
@@ -11,18 +14,44 @@ jobs:
   build-dmg:
     runs-on: macos-latest
 
+    env:
+      APP_NAME: CodexAccounts
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Set DMG version suffix
+        id: vars
+        run: |
+          if [[ "${{ github.event_name }}" == "release" ]]; then
+            echo "version_suffix=${{ github.event.release.tag_name }}" >> "$GITHUB_OUTPUT"
+            echo "target_tag=${{ github.event.release.tag_name }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "version_suffix=latest" >> "$GITHUB_OUTPUT"
+            echo "target_tag=latest" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Build DMG
         run: |
           chmod +x scripts/build-dmg.sh
-          scripts/build-dmg.sh "${{ github.event.release.tag_name }}"
+          scripts/build-dmg.sh "${{ steps.vars.outputs.version_suffix }}"
+
+      - name: Ensure rolling latest pre-release exists
+        if: github.event_name != 'release'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if ! gh release view latest >/dev/null 2>&1; then
+            gh release create latest \
+              --title "Latest build" \
+              --prerelease \
+              --notes "Auto-updated DMG from the latest push to main."
+          fi
 
       - name: Upload DMG to release
         env:
           GH_TOKEN: ${{ github.token }}
-          TAG_NAME: ${{ github.event.release.tag_name }}
+          TAG_NAME: ${{ steps.vars.outputs.target_tag }}
         run: |
-          gh release upload "$TAG_NAME" "dist/CodexAccounts-$TAG_NAME.dmg" --clobber
+          gh release upload "$TAG_NAME" "dist/$APP_NAME-${{ steps.vars.outputs.version_suffix }}.dmg" --clobber
