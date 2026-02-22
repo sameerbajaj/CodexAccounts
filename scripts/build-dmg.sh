@@ -22,6 +22,7 @@ fi
 rm -rf "$STAGING_DIR" "$DERIVED_DATA_DIR"
 mkdir -p "$STAGING_DIR" "$DIST_DIR"
 
+# ── Build ─────────────────────────────────────────────────────────────────────
 xcodebuild \
   -project "$ROOT_DIR/$PROJECT" \
   -scheme "$SCHEME" \
@@ -36,70 +37,89 @@ if [[ ! -d "$APP_PATH" ]]; then
   exit 1
 fi
 
+# ── Inject ICNS if Xcode didn't compile one ───────────────────────────────────
+ICNS_DEST="$APP_PATH/Contents/Resources/AppIcon.icns"
+if [[ ! -f "$ICNS_DEST" ]]; then
+  echo "No AppIcon.icns found in built app — generating from source…"
+
+  ICONSET_DIR="$(mktemp -d)/AppIcon.iconset"
+  mkdir -p "$ICONSET_DIR"
+  ICON_1024="$(mktemp).png"
+
+  swift "$ROOT_DIR/scripts/generate-icon.swift" "$ICON_1024"
+
+  sips -z 16   16   "$ICON_1024" --out "$ICONSET_DIR/icon_16x16.png"      > /dev/null
+  sips -z 32   32   "$ICON_1024" --out "$ICONSET_DIR/icon_16x16@2x.png"   > /dev/null
+  sips -z 32   32   "$ICON_1024" --out "$ICONSET_DIR/icon_32x32.png"      > /dev/null
+  sips -z 64   64   "$ICON_1024" --out "$ICONSET_DIR/icon_32x32@2x.png"   > /dev/null
+  sips -z 128  128  "$ICON_1024" --out "$ICONSET_DIR/icon_128x128.png"    > /dev/null
+  sips -z 256  256  "$ICON_1024" --out "$ICONSET_DIR/icon_128x128@2x.png" > /dev/null
+  sips -z 256  256  "$ICON_1024" --out "$ICONSET_DIR/icon_256x256.png"    > /dev/null
+  sips -z 512  512  "$ICON_1024" --out "$ICONSET_DIR/icon_256x256@2x.png" > /dev/null
+  sips -z 512  512  "$ICON_1024" --out "$ICONSET_DIR/icon_512x512.png"    > /dev/null
+  cp "$ICON_1024"                      "$ICONSET_DIR/icon_512x512@2x.png"
+
+  iconutil -c icns "$ICONSET_DIR" -o "$ICNS_DEST"
+  echo "Injected AppIcon.icns"
+fi
+
+# ── Ad-hoc code signing (prevents "damaged app" Gatekeeper error) ─────────────
+echo "Ad-hoc signing…"
+codesign --force --deep --sign - "$APP_PATH"
+
+# ── Stage app + Applications shortcut ─────────────────────────────────────────
 cp -R "$APP_PATH" "$STAGING_DIR/"
 ln -s /Applications "$STAGING_DIR/Applications"
 
-# ── Set DMG volume icon ──────────────────────────────────────────────────────
-ICNS_SRC="$APP_PATH/Contents/Resources/AppIcon.icns"
-TMP_RW_DMG="$BUILD_DIR/tmp_rw_$APP_NAME.dmg"
+# ── Build DMG with volume icon ─────────────────────────────────────────────────
+TMP_RW_DMG="$BUILD_DIR/tmp_rw_${APP_NAME}.dmg"
+rm -f "$TMP_RW_DMG"
 
-if [[ -f "$ICNS_SRC" ]]; then
-  echo "Setting DMG volume icon from $ICNS_SRC…"
+echo "Creating writable DMG…"
+hdiutil create \
+  -volname "$APP_NAME" \
+  -srcfolder "$STAGING_DIR" \
+  -ov \
+  -format UDRW \
+  -o "$TMP_RW_DMG"
 
-  # Create a writable intermediate DMG
-  hdiutil create \
-    -volname "$APP_NAME" \
-    -srcfolder "$STAGING_DIR" \
-    -ov \
-    -format UDRW \
-    -o "$TMP_RW_DMG"
+# hdiutil appends .dmg automatically when -o lacks the extension; normalise
+[[ -f "$TMP_RW_DMG" ]] || TMP_RW_DMG="${TMP_RW_DMG}.dmg"
 
-  # Attach in background (no Finder window)
-  MOUNT_OUTPUT=$(hdiutil attach "$TMP_RW_DMG" -nobrowse -noautoopen)
-  MOUNT_DIR=$(echo "$MOUNT_OUTPUT" | awk '/Apple_HFS/ { for(i=3;i<=NF;i++) printf "%s ", $i; print "" }' | xargs)
+echo "Mounting writable DMG to set volume icon…"
+MOUNT_OUTPUT=$(hdiutil attach "$TMP_RW_DMG" -nobrowse -noautoopen)
+MOUNT_DIR=$(echo "$MOUNT_OUTPUT" | grep -E '/Volumes/' | awk '{print $NF}')
 
-  if [[ -d "$MOUNT_DIR" ]]; then
-    # Copy icon as the volume icon
-    cp "$ICNS_SRC" "$MOUNT_DIR/.VolumeIcon.icns"
+if [[ -d "$MOUNT_DIR" ]]; then
+  cp "$ICNS_DEST" "$MOUNT_DIR/.VolumeIcon.icns"
 
-    # Mark the volume as having a custom icon (requires Xcode CLT)
-    SETFILE="$(xcode-select -p 2>/dev/null)/usr/bin/SetFile"
-    if [[ -x "$SETFILE" ]]; then
-      "$SETFILE" -a C "$MOUNT_DIR"
-    else
-      # Fallback: set the custom-icon Finder flag via xattr (bit 10 at offset 8)
-      python3 - "$MOUNT_DIR" <<'PYEOF'
-import sys, struct, subprocess, os
+  # Set HasCustomIcon Finder flag on the volume root
+  python3 - "$MOUNT_DIR" <<'PYEOF'
+import sys, subprocess
 path = sys.argv[1]
 try:
-    current = subprocess.check_output(['xattr', '-px', 'com.apple.FinderInfo', path], stderr=subprocess.DEVNULL)
-    data = bytearray(bytes.fromhex(current.decode().replace(' ', '').replace('\n', '')))
+    raw = subprocess.check_output(['xattr', '-px', 'com.apple.FinderInfo', path],
+                                   stderr=subprocess.DEVNULL)
+    data = bytearray(bytes.fromhex(raw.decode().replace(' ', '').replace('\n', '')))
 except subprocess.CalledProcessError:
     data = bytearray(32)
-if len(data) < 16:
+if len(data) < 32:
     data = bytearray(32)
-data[8] |= 0x04  # set HasCustomIcon flag
+data[8] |= 0x04  # kHasCustomIcon
 hex_str = ' '.join(f'{b:02x}' for b in data)
 subprocess.run(['xattr', '-wx', 'com.apple.FinderInfo', hex_str, path], check=False)
+print(f"Set HasCustomIcon on {path}")
 PYEOF
-    fi
 
-    hdiutil detach "$MOUNT_DIR" -quiet
-  fi
-
-  # Convert to final compressed read-only DMG
-  hdiutil convert "$TMP_RW_DMG" -format UDZO -o "$OUTPUT_DMG"
-  rm -f "$TMP_RW_DMG"
+  hdiutil detach "$MOUNT_DIR" -quiet
 else
-  echo "Warning: could not mount temp DMG to set icon, falling back to plain DMG"
-  rm -f "$TMP_RW_DMG"
-  hdiutil create \
-    -volname "$APP_NAME" \
-    -srcfolder "$STAGING_DIR" \
-    -ov \
-    -format UDZO \
-    "$OUTPUT_DMG"
+  echo "Warning: could not determine mount point — skipping volume icon"
+  hdiutil detach "$(echo "$MOUNT_OUTPUT" | awk 'NR==1{print $1}')" -quiet 2>/dev/null || true
 fi
-# ─────────────────────────────────────────────────────────────────────────────
 
-echo "Created DMG: $OUTPUT_DMG"
+# ── Convert to final compressed read-only DMG ──────────────────────────────────
+echo "Converting to final DMG: $OUTPUT_DMG"
+hdiutil convert "$TMP_RW_DMG" -format UDZO -imagekey zlib-level=9 -o "$OUTPUT_DMG"
+rm -f "$TMP_RW_DMG"
+
+echo "✓ Created DMG: $OUTPUT_DMG ($(du -sh "$OUTPUT_DMG" | cut -f1))"
