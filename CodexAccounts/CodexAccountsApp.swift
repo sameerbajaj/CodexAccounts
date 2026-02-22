@@ -30,7 +30,7 @@ struct MenuBarLabel: View {
         HStack(spacing: 3) {
             Image(systemName: "chart.bar.fill")
                 .symbolRenderingMode(.hierarchical)
-            if !viewModel.accounts.isEmpty, let remaining = viewModel.lowestRemaining {
+            if !viewModel.accounts.isEmpty, let remaining = viewModel.menuBarRemaining {
                 Text("\(Int(remaining))%")
                     .font(.system(size: 10, weight: .medium).monospacedDigit())
             }

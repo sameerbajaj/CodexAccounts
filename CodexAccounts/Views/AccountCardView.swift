@@ -85,9 +85,8 @@ struct AccountCardView: View {
 
             PlanBadge(plan: account.planType)
 
-            if isHovering {
-                contextMenu
-            }
+            contextMenu
+                .opacity(isHovering ? 1 : 0)
         }
     }
 
@@ -108,13 +107,13 @@ struct AccountCardView: View {
                 Label("Remove Account", systemImage: "trash")
             }
         } label: {
-            Image(systemName: "ellipsis.circle")
-                .font(.system(size: 12))
+            Image(systemName: "ellipsis.circle.fill")
+                .font(.system(size: 13))
                 .foregroundStyle(.secondary)
+                .symbolRenderingMode(.hierarchical)
         }
         .menuStyle(.borderlessButton)
         .frame(width: 20)
-        .transition(.opacity.combined(with: .scale(scale: 0.8)))
     }
 
     // MARK: - Usage Rows

@@ -81,19 +81,58 @@ final class AccountsViewModel {
         return pinned + sortedUnpinned
     }
 
-    /// Remaining % shown in the menu bar — uses pinned accounts if any, else all
-    var lowestRemaining: Double? {
-        let pinnedAccounts = accounts.filter(\.isPinned)
-        let source = pinnedAccounts.isEmpty ? accounts : pinnedAccounts
-        let values = source.compactMap { usageData[$0.id]?.remainingPercent }
-        return values.min()
+    // MARK: - Menu Bar Display Mode
+
+    enum MenuBarDisplayMode: String, CaseIterable, Identifiable {
+        case topAccount = "Top Account %"
+        case lowestRemaining = "Lowest Remaining %"
+        case iconOnly = "Icon Only"
+
+        var id: String { rawValue }
+
+        var description: String {
+            switch self {
+            case .topAccount: return "Shows remaining % for the first account in current sort order"
+            case .lowestRemaining: return "Shows the lowest remaining % across all accounts"
+            case .iconOnly: return "Shows only the icon with no text"
+            }
+        }
+    }
+
+    var menuBarDisplayMode: MenuBarDisplayMode {
+        get {
+            let raw = UserDefaults.standard.string(forKey: "menuBarDisplayMode") ?? ""
+            return MenuBarDisplayMode(rawValue: raw) ?? .topAccount
+        }
+        set {
+            UserDefaults.standard.set(newValue.rawValue, forKey: "menuBarDisplayMode")
+        }
+    }
+
+    /// Remaining % for the top account in current sort order
+    var topAccountRemaining: Double? {
+        guard let top = sortedAccounts.first else { return nil }
+        return usageData[top.id]?.remainingPercent
+    }
+
+    /// Remaining % shown in the menu bar based on user preference
+    var menuBarRemaining: Double? {
+        switch menuBarDisplayMode {
+        case .topAccount:
+            return topAccountRemaining
+        case .lowestRemaining:
+            let values = accounts.compactMap { usageData[$0.id]?.remainingPercent }
+            return values.min()
+        case .iconOnly:
+            return nil
+        }
     }
 
     /// Overall status color for the menu bar icon
     var statusColor: Color {
-        guard let lowest = lowestRemaining else { return .secondary }
-        if lowest > 40 { return .green }
-        else if lowest > 15 { return .orange }
+        guard let val = menuBarRemaining ?? topAccountRemaining else { return .secondary }
+        if val > 40 { return .green }
+        else if val > 15 { return .orange }
         else { return .red }
     }
 
