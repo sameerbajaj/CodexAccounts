@@ -46,6 +46,26 @@ git push origin v1.0.0
 2. In GitHub, create and publish a Release from that tag.
 3. The workflow runs on macOS, builds the app, creates `CodexAccounts-v1.0.0.dmg`, and uploads it to that Release.
 
+### One-command release (with `gh`)
+
+If you have GitHub CLI installed and authenticated, you can publish in one command:
+
+```bash
+./scripts/publish-release.sh v1.0.0
+```
+
+This will:
+
+1. Create/push the git tag
+2. Create/publish the GitHub Release
+3. Trigger Actions to build+attach the DMG automatically
+
+If you want to attach a locally built DMG immediately (in addition to CI), use:
+
+```bash
+./scripts/publish-release.sh v1.0.0 --attach-now
+```
+
 You can also build a DMG locally with:
 
 ```bash
