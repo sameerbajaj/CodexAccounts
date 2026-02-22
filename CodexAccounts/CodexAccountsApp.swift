@@ -25,6 +25,7 @@ struct CodexAccountsApp: App {
 
 struct MenuBarLabel: View {
     let viewModel: AccountsViewModel
+    private let barHeights: [CGFloat] = [6.0, 9.0, 12.0]
 
     private var remaining: Double? {
         viewModel.accounts.isEmpty ? nil : viewModel.menuBarRemaining
@@ -47,23 +48,23 @@ struct MenuBarLabel: View {
 
     var body: some View {
         HStack(spacing: 4) {
-            // Three-bar icon using plain fixed-size rectangles (Canvas collapses in MenuBarExtra)
-            HStack(alignment: .bottom, spacing: 1.5) {
+            HStack(alignment: .bottom, spacing: 1.2) {
                 ForEach(0..<3, id: \.self) { i in
                     let isLit = i < litBars
-                    RoundedRectangle(cornerRadius: 1.5)
-                        .fill(isLit ? barColor : Color.primary.opacity(0.22))
-                        .frame(width: 3.5, height: barHeights[i])
+                    Capsule(style: .continuous)
+                        .fill(Color.primary.opacity(isLit ? 0.96 : 0.26))
+                        .frame(width: 3.2, height: barHeights[i])
                 }
             }
-            .frame(width: 14, height: 12, alignment: .bottom)
+            .frame(width: 13.5, height: 12, alignment: .bottom)
+            .fixedSize()
 
             if let r = remaining, viewModel.menuBarDisplayMode != .iconOnly {
                 Text("\(Int(r))%")
                     .font(.system(size: 10, weight: .medium).monospacedDigit())
+                    .foregroundStyle(barColor)
             }
         }
+        .fixedSize()
     }
-
-    private let barHeights: [CGFloat] = [5.5, 8.5, 12.0]
 }

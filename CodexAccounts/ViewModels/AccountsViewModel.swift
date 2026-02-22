@@ -42,6 +42,9 @@ final class AccountsViewModel {
             restartAutoRefresh()
         }
     }
+    var autoCheckUpdatesOnLaunch: Bool = true {
+        didSet { UserDefaults.standard.set(autoCheckUpdatesOnLaunch, forKey: "autoCheckUpdatesOnLaunch") }
+    }
 
     // MARK: - Sort
 
@@ -80,6 +83,9 @@ final class AccountsViewModel {
         if let raw = UserDefaults.standard.string(forKey: "refreshInterval"),
            let interval = RefreshInterval(rawValue: raw) {
             refreshInterval = interval
+        }
+        if UserDefaults.standard.object(forKey: "autoCheckUpdatesOnLaunch") != nil {
+            autoCheckUpdatesOnLaunch = UserDefaults.standard.bool(forKey: "autoCheckUpdatesOnLaunch")
         }
     }
 
@@ -235,8 +241,9 @@ final class AccountsViewModel {
         // Refresh all accounts
         Task { await refreshAll() }
 
-        // Check for app updates in the background
-        Task { await checkForUpdates() }
+        if autoCheckUpdatesOnLaunch {
+            Task { await checkForUpdates() }
+        }
 
         // Start auto-refresh timer
         startAutoRefresh()

@@ -274,6 +274,44 @@ struct MenuBarPopover: View {
                     }
                 }
             }
+
+            Divider().opacity(0.3).padding(.horizontal, 14)
+
+            settingsSection(title: "Updates") {
+                HStack(alignment: .top, spacing: 10) {
+                    Image(systemName: "arrow.triangle.2.circlepath.circle")
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundStyle(.secondary)
+                        .frame(width: 16)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Check automatically on launch")
+                            .font(.system(size: 12, weight: .semibold))
+                            .foregroundStyle(.primary)
+                        Text("Detect new versions / latest builds on startup")
+                            .font(.system(size: 10.5))
+                            .foregroundStyle(.secondary)
+                    }
+                    Spacer()
+                    Toggle("", isOn: $viewModel.autoCheckUpdatesOnLaunch)
+                        .labelsHidden()
+                }
+                .padding(.horizontal, 14)
+                .padding(.vertical, 10)
+
+                HStack {
+                    Spacer()
+                    Button {
+                        Task { await viewModel.checkForUpdates() }
+                    } label: {
+                        Label("Check Now", systemImage: "arrow.clockwise")
+                            .font(.system(size: 11, weight: .semibold))
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                    .padding(.horizontal, 14)
+                    .padding(.bottom, 10)
+                }
+            }
         }
     }
 
