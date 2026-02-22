@@ -25,6 +25,11 @@ mkdir -p "$STAGING_DIR" "$DIST_DIR"
 
 # ── Build ─────────────────────────────────────────────────────────────────────
 XCBUILD_EXTRA_ARGS=()
+# Always stamp CURRENT_PROJECT_VERSION with a Unix timestamp so the update
+# checker can detect newer rolling builds by comparing against published_at.
+BUILD_TIMESTAMP=$(date +%s)
+XCBUILD_EXTRA_ARGS+=("CURRENT_PROJECT_VERSION=$BUILD_TIMESTAMP")
+
 if [[ -n "$MARKETING_VERSION" ]]; then
   XCBUILD_EXTRA_ARGS+=("MARKETING_VERSION=$MARKETING_VERSION")
   echo "Stamping version: $MARKETING_VERSION"

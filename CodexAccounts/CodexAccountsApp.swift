@@ -47,30 +47,16 @@ struct MenuBarLabel: View {
 
     var body: some View {
         HStack(spacing: 4) {
-            // Three-bar chart icon drawn with Canvas
-            Canvas { ctx, size in
-                let barCount = 3
-                let gap: CGFloat = 1.5
-                let totalGap = gap * CGFloat(barCount - 1)
-                let barW: CGFloat = (size.width - totalGap) / CGFloat(barCount)
-                let maxH = size.height
-
-                // Heights increase left → right (25 %, 60 %, 100 %)
-                let relativeHeights: [CGFloat] = [0.45, 0.72, 1.0]
-
-                for i in 0..<barCount {
-                    let x = CGFloat(i) * (barW + gap)
-                    let barH = maxH * relativeHeights[i]
-                    let y = maxH - barH
-                    let rect = CGRect(x: x, y: y, width: barW, height: barH)
-                    let path = Path(roundedRect: rect, cornerRadius: 1.5)
-
+            // Three-bar icon using plain fixed-size rectangles (Canvas collapses in MenuBarExtra)
+            HStack(alignment: .bottom, spacing: 1.5) {
+                ForEach(0..<3, id: \.self) { i in
                     let isLit = i < litBars
-                    let resolvedColor = isLit ? barColor : Color.primary.opacity(0.22)
-                    ctx.fill(path, with: .color(resolvedColor))
+                    RoundedRectangle(cornerRadius: 1.5)
+                        .fill(isLit ? barColor : Color.primary.opacity(0.22))
+                        .frame(width: 3.5, height: barHeights[i])
                 }
             }
-            .frame(width: 14, height: 12)
+            .frame(width: 14, height: 12, alignment: .bottom)
 
             if let r = remaining, viewModel.menuBarDisplayMode != .iconOnly {
                 Text("\(Int(r))%")
@@ -78,4 +64,6 @@ struct MenuBarLabel: View {
             }
         }
     }
+
+    private let barHeights: [CGFloat] = [5.5, 8.5, 12.0]
 }

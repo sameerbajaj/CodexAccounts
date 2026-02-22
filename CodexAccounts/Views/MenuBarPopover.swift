@@ -187,7 +187,7 @@ struct MenuBarPopover: View {
                     .foregroundStyle(.green)
             }
             VStack(alignment: .leading, spacing: 1) {
-                Text("Update available — v\(update.version)")
+                Text(update.isRolling ? "New build available" : "Update available — v\(update.version)")
                     .font(.system(size: 11, weight: .semibold))
                     .foregroundStyle(.primary)
                 Text("Click to download")

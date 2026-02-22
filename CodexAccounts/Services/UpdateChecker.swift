@@ -6,17 +6,18 @@
 import Foundation
 
 struct UpdateInfo {
-    let version: String          // e.g. "1.2.0"
-    let tagName: String          // e.g. "v1.2.0"
+    let version: String          // e.g. "1.2.0" or "latest"
+    let tagName: String          // e.g. "v1.2.0" or "latest"
     let releaseURL: URL
     let releaseNotes: String?
+    let isRolling: Bool          // true for the "latest" CI build
 }
 
 enum UpdateChecker {
     static let githubRepo = "sameerbajaj/CodexAccounts"
     static let releasesPage = URL(string: "https://github.com/\(githubRepo)/releases")!
 
-    // Returns an UpdateInfo if a newer version is available, nil otherwise.
+    // Returns an UpdateInfo if a newer version (or newer rolling build) is available.
     static func check() async -> UpdateInfo? {
         let apiURL = URL(string: "https://api.github.com/repos/\(githubRepo)/releases")!
         var req = URLRequest(url: apiURL)
@@ -28,22 +29,39 @@ enum UpdateChecker {
               let releases = try? JSONDecoder().decode([GitHubRelease].self, from: data)
         else { return nil }
 
-        // Ignore pre-releases tagged "latest" — those are rolling CI builds.
-        // Pick the newest stable release (non-prerelease, non-draft).
-        guard let newest = releases.first(where: { !$0.draft && !$0.prerelease && $0.tagName != "latest" })
-        else { return nil }
+        // 1. Check stable releases first
+        if let newest = releases.first(where: { !$0.draft && !$0.prerelease && $0.tagName != "latest" }) {
+            let remoteVersion = normalise(newest.tagName)
+            let localVersion  = normalise(currentVersion)
+            if isNewer(remoteVersion, than: localVersion) {
+                return UpdateInfo(
+                    version: remoteVersion,
+                    tagName: newest.tagName,
+                    releaseURL: URL(string: newest.htmlURL) ?? releasesPage,
+                    releaseNotes: newest.body,
+                    isRolling: false
+                )
+            }
+        }
 
-        let remoteVersion = normalise(newest.tagName)
-        let localVersion  = normalise(currentVersion)
+        // 2. Check the rolling "latest" pre-release — compare published_at
+        //    against the app's build timestamp (CFBundleVersion = Unix seconds).
+        if let latest = releases.first(where: { $0.tagName == "latest" }),
+           let publishedAt = latest.publishedAt {
+            let currentBuild = buildTimestamp
+            if currentBuild > 0 && publishedAt > currentBuild + 60 {
+                // Remote is at least 1 min newer — a real push happened
+                return UpdateInfo(
+                    version: "latest",
+                    tagName: "latest",
+                    releaseURL: URL(string: latest.htmlURL) ?? releasesPage,
+                    releaseNotes: latest.body,
+                    isRolling: true
+                )
+            }
+        }
 
-        guard isNewer(remoteVersion, than: localVersion) else { return nil }
-
-        return UpdateInfo(
-            version: remoteVersion,
-            tagName: newest.tagName,
-            releaseURL: URL(string: newest.htmlURL) ?? releasesPage,
-            releaseNotes: newest.body
-        )
+        return nil
     }
 
     // MARK: - Helpers
@@ -52,14 +70,19 @@ enum UpdateChecker {
         Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "0"
     }
 
-    /// Strips a leading "v" and normalises to dotted numerics.
+    /// CFBundleVersion is stamped as a Unix timestamp by build-dmg.sh
+    static var buildTimestamp: TimeInterval {
+        guard let s = Bundle.main.infoDictionary?["CFBundleVersion"] as? String,
+              let ts = TimeInterval(s) else { return 0 }
+        return ts
+    }
+
     private static func normalise(_ tag: String) -> String {
         var s = tag
         if s.hasPrefix("v") { s = String(s.dropFirst()) }
         return s
     }
 
-    /// Returns true if `a` > `b` using numeric component comparison.
     private static func isNewer(_ a: String, than b: String) -> Bool {
         let av = a.split(separator: ".").compactMap { Int($0) }
         let bv = b.split(separator: ".").compactMap { Int($0) }
@@ -76,15 +99,32 @@ enum UpdateChecker {
 // MARK: - GitHub API models
 
 private struct GitHubRelease: Decodable {
-    let tagName:  String
-    let htmlURL:  String
-    let draft:    Bool
-    let prerelease: Bool
-    let body:     String?
+    let tagName:     String
+    let htmlURL:     String
+    let draft:       Bool
+    let prerelease:  Bool
+    let body:        String?
+    let publishedAt: TimeInterval?   // decoded from ISO-8601 string
 
     enum CodingKeys: String, CodingKey {
-        case tagName   = "tag_name"
-        case htmlURL   = "html_url"
+        case tagName    = "tag_name"
+        case htmlURL    = "html_url"
         case draft, prerelease, body
+        case publishedAt = "published_at"
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        tagName    = try c.decode(String.self, forKey: .tagName)
+        htmlURL    = try c.decode(String.self, forKey: .htmlURL)
+        draft      = try c.decode(Bool.self,   forKey: .draft)
+        prerelease = try c.decode(Bool.self,   forKey: .prerelease)
+        body       = try c.decodeIfPresent(String.self, forKey: .body)
+        if let iso = try c.decodeIfPresent(String.self, forKey: .publishedAt) {
+            let fmt = ISO8601DateFormatter()
+            publishedAt = fmt.date(from: iso)?.timeIntervalSince1970
+        } else {
+            publishedAt = nil
+        }
     }
 }
