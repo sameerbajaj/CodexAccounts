@@ -92,6 +92,7 @@ MOUNT_DIR=$(echo "$MOUNT_OUTPUT" | grep -E '/Volumes/' | awk '{print $NF}')
 
 if [[ -d "$MOUNT_DIR" ]]; then
   cp "$ICNS_DEST" "$MOUNT_DIR/.VolumeIcon.icns"
+  chflags hidden "$MOUNT_DIR/.VolumeIcon.icns"
 
   # Set HasCustomIcon Finder flag on the volume root
   python3 - "$MOUNT_DIR" <<'PYEOF'
