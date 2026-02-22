@@ -21,6 +21,16 @@ final class AccountsViewModel {
     var detectedUntrackedEmail: String? = nil
     var sortMode: SortMode = .pinned
     var availableUpdate: UpdateInfo? = nil
+    var warmUpStates: [String: WarmUpState] = [:]
+
+    // MARK: - Warm-Up State
+
+    enum WarmUpState: Equatable {
+        case available   // quota just reset — button visible
+        case warming     // request in flight
+        case done        // success — auto-clears after delay
+        case failed(String)
+    }
 
     // Stored so @Observable tracks changes and SwiftUI re-renders immediately
     var menuBarDisplayMode: MenuBarDisplayMode = .topAccount {
@@ -264,6 +274,23 @@ final class AccountsViewModel {
             }
             usageData[account.id] = newUsage
 
+            // Detect quota reset: usage dropped from ≥15% → ≤3% (not on first load)
+            if let prev = previousUsage {
+                let wasUsed = prev.usedPercent >= 15
+                let isNowFresh = newUsage.usedPercent <= 3
+                if wasUsed && isNowFresh {
+                    // Only surface warm-up button if not already warming / done
+                    if warmUpStates[account.id] == nil || warmUpStates[account.id] == .available {
+                        warmUpStates[account.id] = .available
+                    }
+                } else if newUsage.usedPercent > 5 {
+                    // Model is already being used — clear stale warm-up prompt
+                    if warmUpStates[account.id] == .available {
+                        warmUpStates[account.id] = nil
+                    }
+                }
+            }
+
             // Update stored tokens if they were refreshed
             if let updated = result.updatedAccount {
                 if let idx = accounts.firstIndex(where: { $0.id == account.id }) {
@@ -288,6 +315,39 @@ final class AccountsViewModel {
             usage.error = error.localizedDescription
             usage.lastUpdated = Date()
             usageData[account.id] = usage
+        }
+    }
+
+    // MARK: - Warm-Up
+
+    func warmUp(_ account: CodexAccount) {
+        guard warmUpStates[account.id] != .warming else { return }
+        warmUpStates[account.id] = .warming
+        Task {
+            do {
+                try await WarmUpService.warmUp(account: account)
+                await MainActor.run {
+                    warmUpStates[account.id] = .done
+                }
+                // Auto-clear after 3 s so the card returns to normal
+                try? await Task.sleep(for: .seconds(3))
+                await MainActor.run {
+                    if warmUpStates[account.id] == .done {
+                        warmUpStates[account.id] = nil
+                    }
+                }
+            } catch {
+                await MainActor.run {
+                    warmUpStates[account.id] = .failed(error.localizedDescription)
+                }
+                // Auto-clear failure after 5 s
+                try? await Task.sleep(for: .seconds(5))
+                await MainActor.run {
+                    if case .failed = warmUpStates[account.id] ?? .available {
+                        warmUpStates[account.id] = nil
+                    }
+                }
+            }
         }
     }
 
