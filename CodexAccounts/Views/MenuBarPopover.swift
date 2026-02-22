@@ -196,9 +196,9 @@ struct MenuBarPopover: View {
             }
             Spacer()
             Button {
-                NSWorkspace.shared.open(update.releaseURL)
+                NSWorkspace.shared.open(update.downloadURL ?? update.releaseURL)
             } label: {
-                Text("Download")
+                Text(update.downloadURL == nil ? "Download" : "Install")
                     .font(.system(size: 10, weight: .semibold))
                     .foregroundStyle(.white)
                     .padding(.horizontal, 9)
@@ -301,15 +301,28 @@ struct MenuBarPopover: View {
                 HStack {
                     Spacer()
                     Button {
-                        Task { await viewModel.checkForUpdates() }
+                        Task { await viewModel.checkForUpdates(showUpToDateFeedback: true) }
                     } label: {
-                        Label("Check Now", systemImage: "arrow.clockwise")
-                            .font(.system(size: 11, weight: .semibold))
+                        if viewModel.isCheckingForUpdates {
+                            ProgressView()
+                        } else {
+                            Label("Check Now", systemImage: "arrow.clockwise")
+                                .font(.system(size: 11, weight: .semibold))
+                        }
                     }
                     .buttonStyle(.bordered)
                     .controlSize(.small)
+                    .disabled(viewModel.isCheckingForUpdates)
                     .padding(.horizontal, 14)
                     .padding(.bottom, 10)
+                }
+
+                if let message = viewModel.updateCheckMessage {
+                    Text(message)
+                        .font(.system(size: 10.5, weight: .medium))
+                        .foregroundStyle(.secondary)
+                        .padding(.horizontal, 14)
+                        .padding(.bottom, 10)
                 }
             }
         }

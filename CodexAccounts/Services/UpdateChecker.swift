@@ -9,6 +9,7 @@ struct UpdateInfo {
     let version: String          // e.g. "1.2.0" or "latest"
     let tagName: String          // e.g. "v1.2.0" or "latest"
     let releaseURL: URL
+    let downloadURL: URL?
     let releaseNotes: String?
     let isRolling: Bool          // true for the "latest" CI build
 }
@@ -23,6 +24,7 @@ enum UpdateChecker {
         var req = URLRequest(url: apiURL)
         req.setValue("application/vnd.github+json", forHTTPHeaderField: "Accept")
         req.setValue("2022-11-28", forHTTPHeaderField: "X-GitHub-Api-Version")
+        req.setValue("CodexAccounts", forHTTPHeaderField: "User-Agent")
         req.timeoutInterval = 10
 
         guard let (data, _) = try? await URLSession.shared.data(for: req),
@@ -38,6 +40,7 @@ enum UpdateChecker {
                     version: remoteVersion,
                     tagName: newest.tagName,
                     releaseURL: URL(string: newest.htmlURL) ?? releasesPage,
+                    downloadURL: preferredDMGURL(in: newest),
                     releaseNotes: newest.body,
                     isRolling: false
                 )
@@ -55,6 +58,7 @@ enum UpdateChecker {
                     version: "latest",
                     tagName: "latest",
                     releaseURL: URL(string: latest.htmlURL) ?? releasesPage,
+                    downloadURL: preferredDMGURL(in: latest),
                     releaseNotes: latest.body,
                     isRolling: true
                 )
@@ -94,6 +98,11 @@ enum UpdateChecker {
         }
         return false
     }
+
+    private static func preferredDMGURL(in release: GitHubRelease) -> URL? {
+        let dmg = release.assets.first { $0.name.lowercased().hasSuffix(".dmg") }
+        return dmg.flatMap { URL(string: $0.browserDownloadURL) }
+    }
 }
 
 // MARK: - GitHub API models
@@ -105,12 +114,14 @@ private struct GitHubRelease: Decodable {
     let prerelease:  Bool
     let body:        String?
     let publishedAt: TimeInterval?   // decoded from ISO-8601 string
+    let assets:      [GitHubAsset]
 
     enum CodingKeys: String, CodingKey {
         case tagName    = "tag_name"
         case htmlURL    = "html_url"
         case draft, prerelease, body
         case publishedAt = "published_at"
+        case assets
     }
 
     init(from decoder: Decoder) throws {
@@ -120,11 +131,22 @@ private struct GitHubRelease: Decodable {
         draft      = try c.decode(Bool.self,   forKey: .draft)
         prerelease = try c.decode(Bool.self,   forKey: .prerelease)
         body       = try c.decodeIfPresent(String.self, forKey: .body)
+        assets     = try c.decodeIfPresent([GitHubAsset].self, forKey: .assets) ?? []
         if let iso = try c.decodeIfPresent(String.self, forKey: .publishedAt) {
             let fmt = ISO8601DateFormatter()
             publishedAt = fmt.date(from: iso)?.timeIntervalSince1970
         } else {
             publishedAt = nil
         }
+    }
+}
+
+private struct GitHubAsset: Decodable {
+    let name: String
+    let browserDownloadURL: String
+
+    enum CodingKeys: String, CodingKey {
+        case name
+        case browserDownloadURL = "browser_download_url"
     }
 }

@@ -25,6 +25,7 @@ struct CodexAccountsApp: App {
 
 struct MenuBarLabel: View {
     let viewModel: AccountsViewModel
+    private let barHeights: [CGFloat] = [4.0, 7.0, 10.0]
 
     private var remaining: Double? {
         viewModel.accounts.isEmpty ? nil : viewModel.menuBarRemaining
@@ -45,19 +46,16 @@ struct MenuBarLabel: View {
         return .red
     }
 
-    private var barGlyph: String {
-        switch litBars {
-        case 3: return "▂▅█"
-        case 2: return "▂▅▁"
-        default: return "▂▁▁"
-        }
-    }
-
     var body: some View {
         HStack(spacing: 4) {
-            Text(barGlyph)
-                .font(.system(size: 11, weight: .semibold, design: .rounded).monospacedDigit())
-                .foregroundStyle(barColor)
+            HStack(alignment: .bottom, spacing: 1.1) {
+                ForEach(0..<3, id: \.self) { i in
+                    RoundedRectangle(cornerRadius: 0.9)
+                        .fill(i < litBars ? barColor : Color.primary.opacity(0.22))
+                        .frame(width: 2.5, height: barHeights[i])
+                }
+            }
+            .frame(width: 10.0, height: 10.5, alignment: .bottom)
                 .fixedSize()
 
             if let r = remaining, viewModel.menuBarDisplayMode != .iconOnly {

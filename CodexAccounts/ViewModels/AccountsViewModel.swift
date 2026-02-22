@@ -22,6 +22,8 @@ final class AccountsViewModel {
     var sortMode: SortMode = .pinned
     var availableUpdate: UpdateInfo? = nil
     var warmUpStates: [String: WarmUpState] = [:]
+    var isCheckingForUpdates = false
+    var updateCheckMessage: String? = nil
 
     // MARK: - Warm-Up State
 
@@ -242,7 +244,7 @@ final class AccountsViewModel {
         Task { await refreshAll() }
 
         if autoCheckUpdatesOnLaunch {
-            Task { await checkForUpdates() }
+            Task { await checkForUpdates(showUpToDateFeedback: false) }
         }
 
         // Start auto-refresh timer
@@ -360,9 +362,37 @@ final class AccountsViewModel {
 
     // MARK: - Update Checking
 
-    func checkForUpdates() async {
+    func checkForUpdates(showUpToDateFeedback: Bool = false) async {
+        await MainActor.run {
+            isCheckingForUpdates = true
+            if showUpToDateFeedback {
+                updateCheckMessage = nil
+            }
+        }
+
         let update = await UpdateChecker.check()
-        await MainActor.run { availableUpdate = update }
+
+        await MainActor.run {
+            isCheckingForUpdates = false
+            availableUpdate = update
+
+            if let update {
+                updateCheckMessage = update.isRolling
+                    ? "New pre-release build available."
+                    : "New version v\(update.version) available."
+            } else if showUpToDateFeedback {
+                updateCheckMessage = "You’re up to date."
+            }
+        }
+
+        if showUpToDateFeedback {
+            try? await Task.sleep(for: .seconds(4))
+            await MainActor.run {
+                if availableUpdate == nil {
+                    updateCheckMessage = nil
+                }
+            }
+        }
     }
 
     func dismissUpdate() {
