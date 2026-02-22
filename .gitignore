@@ -1,3 +1,6 @@
+# AI assistant instructions (local only)
+.github/copilot-instructions.md
+
 # macOS
 .DS_Store
 .AppleDouble
