@@ -20,6 +20,7 @@ final class AccountsViewModel {
     var addAccountStatus: AddAccountStatus = .idle
     var detectedUntrackedEmail: String? = nil
     var sortMode: SortMode = .pinned
+    var availableUpdate: UpdateInfo? = nil
 
     // Stored so @Observable tracks changes and SwiftUI re-renders immediately
     var menuBarDisplayMode: MenuBarDisplayMode = .topAccount {
@@ -224,7 +225,10 @@ final class AccountsViewModel {
         // Refresh all accounts
         Task { await refreshAll() }
 
-        // Start auto-refresh every 5 minutes
+        // Check for app updates in the background
+        Task { await checkForUpdates() }
+
+        // Start auto-refresh timer
         startAutoRefresh()
     }
 
@@ -285,6 +289,17 @@ final class AccountsViewModel {
             usage.lastUpdated = Date()
             usageData[account.id] = usage
         }
+    }
+
+    // MARK: - Update Checking
+
+    func checkForUpdates() async {
+        let update = await UpdateChecker.check()
+        await MainActor.run { availableUpdate = update }
+    }
+
+    func dismissUpdate() {
+        availableUpdate = nil
     }
 
     // MARK: - Auto Refresh

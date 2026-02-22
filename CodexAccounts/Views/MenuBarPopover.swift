@@ -6,6 +6,7 @@
 //
 
 import SwiftUI
+import AppKit
 
 struct MenuBarPopover: View {
     @Bindable var viewModel: AccountsViewModel
@@ -45,6 +46,7 @@ struct MenuBarPopover: View {
         .animation(.easeInOut(duration: 0.2), value: viewModel.showingAddAccount)
         .animation(.easeInOut(duration: 0.2), value: viewModel.accounts.count)
         .animation(.easeInOut(duration: 0.2), value: showingSettings)
+        .animation(.easeInOut(duration: 0.3), value: viewModel.availableUpdate?.version)
         .task { viewModel.setup() }
     }
 
@@ -142,6 +144,11 @@ struct MenuBarPopover: View {
 
     private var mainContent: some View {
         VStack(spacing: 0) {
+            if let update = viewModel.availableUpdate {
+                updateBanner(update)
+                Divider().opacity(0.4)
+            }
+
             if let email = viewModel.detectedUntrackedEmail {
                 detectedBanner(email: email)
                 Divider().opacity(0.4)
@@ -163,6 +170,49 @@ struct MenuBarPopover: View {
             .padding(.horizontal, 12)
             .padding(.vertical, 10)
         }
+    }
+
+    // MARK: - Update Banner
+
+    private func updateBanner(_ update: UpdateInfo) -> some View {
+        HStack(spacing: 8) {
+            ZStack {
+                Circle()
+                    .fill(Color.green.opacity(0.15))
+                    .frame(width: 22, height: 22)
+                Image(systemName: "arrow.down.circle.fill")
+                    .font(.system(size: 12))
+                    .foregroundStyle(.green)
+            }
+            VStack(alignment: .leading, spacing: 1) {
+                Text("Update available — v\(update.version)")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(.primary)
+                Text("Click to download")
+                    .font(.system(size: 10))
+                    .foregroundStyle(.secondary)
+            }
+            Spacer()
+            Button {
+                NSWorkspace.shared.open(update.releaseURL)
+            } label: {
+                Text("Download")
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 9)
+                    .padding(.vertical, 4)
+                    .background(Capsule().fill(Color.green))
+            }
+            .buttonStyle(.plain)
+            Button(action: { viewModel.dismissUpdate() }) {
+                Image(systemName: "xmark")
+                    .font(.system(size: 8, weight: .bold))
+                    .foregroundStyle(.tertiary)
+            }
+            .buttonStyle(.plain)
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 9)
     }
 
     // MARK: - Detected Banner
@@ -314,10 +364,19 @@ struct MenuBarPopover: View {
             .buttonStyle(.plain)
             .help("Settings")
 
-            Text("v1.0")
-                .font(.system(size: 9))
-                .foregroundStyle(Color.primary.opacity(0.22))
-                .padding(.horizontal, 4)
+            // Version — taps to open releases page
+            Button {
+                NSWorkspace.shared.open(UpdateChecker.releasesPage)
+            } label: {
+                Text("v\(UpdateChecker.currentVersion)")
+                    .font(.system(size: 9))
+                    .foregroundStyle(viewModel.availableUpdate != nil
+                                     ? Color.green
+                                     : Color.primary.opacity(0.3))
+            }
+            .buttonStyle(.plain)
+            .help(viewModel.availableUpdate != nil ? "Update available" : "View releases")
+            .padding(.horizontal, 4)
 
             Button("Quit") { NSApplication.shared.terminate(nil) }
                 .buttonStyle(.plain)

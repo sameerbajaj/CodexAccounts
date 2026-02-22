@@ -25,17 +25,21 @@ jobs:
         id: vars
         run: |
           if [[ "${{ github.event_name }}" == "release" ]]; then
-            echo "version_suffix=${{ github.event.release.tag_name }}" >> "$GITHUB_OUTPUT"
-            echo "target_tag=${{ github.event.release.tag_name }}" >> "$GITHUB_OUTPUT"
+            TAG="${{ github.event.release.tag_name }}"
+            VERSION="${TAG#v}"
+            echo "version_suffix=$TAG" >> "$GITHUB_OUTPUT"
+            echo "target_tag=$TAG" >> "$GITHUB_OUTPUT"
+            echo "marketing_version=$VERSION" >> "$GITHUB_OUTPUT"
           else
             echo "version_suffix=latest" >> "$GITHUB_OUTPUT"
             echo "target_tag=latest" >> "$GITHUB_OUTPUT"
+            echo "marketing_version=" >> "$GITHUB_OUTPUT"
           fi
 
       - name: Build DMG
         run: |
           chmod +x scripts/build-dmg.sh
-          scripts/build-dmg.sh "${{ steps.vars.outputs.version_suffix }}"
+          scripts/build-dmg.sh "${{ steps.vars.outputs.version_suffix }}" "${{ steps.vars.outputs.marketing_version }}"
 
       - name: Ensure rolling latest pre-release exists
         if: github.event_name != 'release'
