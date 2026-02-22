@@ -35,7 +35,7 @@ final class AccountsViewModel {
     }
 
     // Stored so @Observable tracks changes and SwiftUI re-renders immediately
-    var menuBarDisplayMode: MenuBarDisplayMode = .topAccount {
+    var menuBarDisplayMode: MenuBarDisplayMode = .iconAndPercent {
         didSet { UserDefaults.standard.set(menuBarDisplayMode.rawValue, forKey: "menuBarDisplayMode") }
     }
     var refreshInterval: RefreshInterval = .fiveMin {
@@ -128,25 +128,25 @@ final class AccountsViewModel {
     // MARK: - Menu Bar Display Mode
 
     enum MenuBarDisplayMode: String, CaseIterable, Identifiable {
-        case topAccount = "Top Account %"
-        case lowestRemaining = "Lowest Remaining %"
+        case iconAndPercent = "Icon + %"
         case iconOnly = "Icon Only"
+        case percentOnly = "% Only"
 
         var id: String { rawValue }
 
         var icon: String {
             switch self {
-            case .topAccount: return "arrow.up.circle"
-            case .lowestRemaining: return "arrow.down.circle"
-            case .iconOnly: return "eye.slash"
+            case .iconAndPercent: return "chart.bar.doc.horizontal"
+            case .iconOnly: return "chart.bar.fill"
+            case .percentOnly: return "number"
             }
         }
 
         var description: String {
             switch self {
-            case .topAccount: return "% for top account in current sort"
-            case .lowestRemaining: return "Lowest % across all accounts"
-            case .iconOnly: return "Icon only, no number"
+            case .iconAndPercent: return "Three-bar icon with remaining %"
+            case .iconOnly: return "Three-bar icon only, no number"
+            case .percentOnly: return "Just the remaining %, no icon"
             }
         }
     }
@@ -191,17 +191,9 @@ final class AccountsViewModel {
         return usageData[top.id]?.remainingPercent
     }
 
-    /// Remaining % shown in the menu bar based on user preference
+    /// Remaining % shown in the menu bar (always based on top account in sort order)
     var menuBarRemaining: Double? {
-        switch menuBarDisplayMode {
-        case .topAccount:
-            return topAccountRemaining
-        case .lowestRemaining:
-            let values = accounts.compactMap { usageData[$0.id]?.remainingPercent }
-            return values.min()
-        case .iconOnly:
-            return nil
-        }
+        topAccountRemaining
     }
 
     /// Overall status color for the menu bar icon

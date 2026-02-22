@@ -25,45 +25,47 @@ struct CodexAccountsApp: App {
 
 struct MenuBarLabel: View {
     let viewModel: AccountsViewModel
-    private let barHeights: [CGFloat] = [4.0, 7.0, 10.0]
 
     private var remaining: Double? {
         viewModel.accounts.isEmpty ? nil : viewModel.menuBarRemaining
     }
 
-    /// How many of the 3 bars should be lit (1–3), based on remaining %
-    private var litBars: Int {
-        guard let r = remaining else { return 3 }
-        if r > 66 { return 3 }
-        if r > 33 { return 2 }
-        return 1
-    }
-
-    private var barColor: Color {
+    private var statusColor: Color {
         guard let r = remaining else { return .primary }
         if r > 40 { return .green }
         if r > 15 { return .orange }
         return .red
     }
 
-    var body: some View {
-        HStack(spacing: 4) {
-            HStack(alignment: .bottom, spacing: 1.1) {
-                ForEach(0..<3, id: \.self) { i in
-                    RoundedRectangle(cornerRadius: 0.9)
-                        .fill(i < litBars ? barColor : Color.primary.opacity(0.22))
-                        .frame(width: 2.5, height: barHeights[i])
-                }
-            }
-            .frame(width: 10.0, height: 10.5, alignment: .bottom)
-                .fixedSize()
+    /// SF Symbol name — changes with usage level
+    private var iconName: String {
+        guard let r = remaining else { return "chart.bar.fill" }
+        if r > 66 { return "chart.bar.fill" }          // 3 bars
+        if r > 33 { return "chart.bar.xaxis" }           // 2 bars
+        return "chart.bar.xaxis"                          // 1 bar (dimmed)
+    }
 
-            if let r = remaining, viewModel.menuBarDisplayMode != .iconOnly {
+    private var showIcon: Bool {
+        viewModel.menuBarDisplayMode != .percentOnly
+    }
+
+    private var showPercent: Bool {
+        viewModel.menuBarDisplayMode != .iconOnly
+    }
+
+    var body: some View {
+        HStack(spacing: 3) {
+            if showIcon {
+                Image(systemName: iconName)
+                    .font(.system(size: 11, weight: .medium))
+                    .symbolRenderingMode(.hierarchical)
+                    .foregroundStyle(statusColor)
+            }
+
+            if showPercent, let r = remaining {
                 Text("\(Int(r))%")
                     .font(.system(size: 10, weight: .medium).monospacedDigit())
-                    .foregroundStyle(barColor)
             }
         }
-        .fixedSize()
     }
 }
