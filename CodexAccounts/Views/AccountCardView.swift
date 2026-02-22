@@ -107,13 +107,18 @@ struct AccountCardView: View {
                 Label("Remove Account", systemImage: "trash")
             }
         } label: {
-            Image(systemName: "ellipsis.circle.fill")
-                .font(.system(size: 13))
-                .foregroundStyle(.secondary)
-                .symbolRenderingMode(.hierarchical)
+            ZStack {
+                RoundedRectangle(cornerRadius: 5)
+                    .fill(Color.primary.opacity(isHovering ? 0.10 : 0))
+                Image(systemName: "ellipsis")
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(Color.primary.opacity(0.55))
+            }
+            .frame(width: 24, height: 20)
         }
         .menuStyle(.borderlessButton)
-        .frame(width: 20)
+        .menuIndicator(.hidden)
+        .fixedSize()
     }
 
     // MARK: - Usage Rows

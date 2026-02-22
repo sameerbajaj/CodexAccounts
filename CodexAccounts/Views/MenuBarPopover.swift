@@ -194,58 +194,101 @@ struct MenuBarPopover: View {
     // MARK: - Settings Panel
 
     private var settingsPanel: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("Menu Bar")
-                .font(.system(size: 11, weight: .semibold))
-                .foregroundStyle(.secondary)
-                .textCase(.uppercase)
-
-            VStack(spacing: 2) {
+        VStack(alignment: .leading, spacing: 0) {
+            settingsSection(title: "Menu Bar Shows") {
                 ForEach(AccountsViewModel.MenuBarDisplayMode.allCases) { mode in
-                    Button {
+                    settingsRow(
+                        icon: mode.icon,
+                        label: mode.rawValue,
+                        description: mode.description,
+                        isSelected: viewModel.menuBarDisplayMode == mode
+                    ) {
                         viewModel.menuBarDisplayMode = mode
-                    } label: {
-                        HStack(spacing: 10) {
-                            ZStack {
-                                Circle()
-                                    .stroke(viewModel.menuBarDisplayMode == mode ? Color.accentColor : Color.primary.opacity(0.2), lineWidth: 1.5)
-                                    .frame(width: 14, height: 14)
-                                if viewModel.menuBarDisplayMode == mode {
-                                    Circle()
-                                        .fill(Color.accentColor)
-                                        .frame(width: 7, height: 7)
-                                }
-                            }
-
-                            VStack(alignment: .leading, spacing: 1) {
-                                Text(mode.rawValue)
-                                    .font(.system(size: 12, weight: .medium))
-                                    .foregroundStyle(.primary)
-                                Text(mode.description)
-                                    .font(.system(size: 10))
-                                    .foregroundStyle(.secondary)
-                                    .lineLimit(1)
-                            }
-
-                            Spacer()
-                        }
-                        .contentShape(Rectangle())
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 7)
-                        .background(
-                            RoundedRectangle(cornerRadius: 7)
-                                .fill(viewModel.menuBarDisplayMode == mode
-                                      ? Color.accentColor.opacity(0.08)
-                                      : Color.clear)
-                        )
                     }
-                    .buttonStyle(.plain)
-                    .animation(.easeInOut(duration: 0.12), value: viewModel.menuBarDisplayMode)
+                }
+            }
+
+            Divider().opacity(0.3).padding(.horizontal, 14)
+
+            settingsSection(title: "Auto-Refresh") {
+                ForEach(AccountsViewModel.RefreshInterval.allCases) { interval in
+                    settingsRow(
+                        icon: interval.icon,
+                        label: interval.rawValue,
+                        description: interval.description,
+                        isSelected: viewModel.refreshInterval == interval
+                    ) {
+                        viewModel.refreshInterval = interval
+                    }
                 }
             }
         }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 12)
+    }
+
+    private func settingsSection<Content: View>(title: String, @ViewBuilder content: () -> Content) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(title)
+                .font(.system(size: 9, weight: .semibold))
+                .foregroundStyle(.tertiary)
+                .textCase(.uppercase)
+                .tracking(0.5)
+                .padding(.horizontal, 14)
+                .padding(.top, 10)
+                .padding(.bottom, 2)
+
+            VStack(spacing: 1) {
+                content()
+            }
+            .padding(.bottom, 8)
+        }
+    }
+
+    private func settingsRow(icon: String, label: String, description: String, isSelected: Bool, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            HStack(spacing: 10) {
+                // Radio dot
+                ZStack {
+                    Circle()
+                        .strokeBorder(
+                            isSelected ? Color.accentColor : Color.primary.opacity(0.2),
+                            lineWidth: 1.5
+                        )
+                        .frame(width: 14, height: 14)
+                    if isSelected {
+                        Circle()
+                            .fill(Color.accentColor)
+                            .frame(width: 7, height: 7)
+                    }
+                }
+
+                // Icon
+                Image(systemName: icon)
+                    .font(.system(size: 11))
+                    .foregroundStyle(isSelected ? Color.accentColor : .secondary)
+                    .frame(width: 16)
+
+                // Labels
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(label)
+                        .font(.system(size: 12, weight: isSelected ? .semibold : .regular))
+                        .foregroundStyle(.primary)
+                    Text(description)
+                        .font(.system(size: 10))
+                        .foregroundStyle(.secondary)
+                }
+
+                Spacer()
+            }
+            .contentShape(Rectangle())
+            .padding(.horizontal, 14)
+            .padding(.vertical, 6)
+            .background(
+                isSelected
+                    ? Color.accentColor.opacity(0.07)
+                    : Color.clear
+            )
+        }
+        .buttonStyle(.plain)
     }
 
     // MARK: - Footer

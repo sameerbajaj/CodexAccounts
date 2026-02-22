@@ -21,6 +21,17 @@ final class AccountsViewModel {
     var detectedUntrackedEmail: String? = nil
     var sortMode: SortMode = .pinned
 
+    // Stored so @Observable tracks changes and SwiftUI re-renders immediately
+    var menuBarDisplayMode: MenuBarDisplayMode = .topAccount {
+        didSet { UserDefaults.standard.set(menuBarDisplayMode.rawValue, forKey: "menuBarDisplayMode") }
+    }
+    var refreshInterval: RefreshInterval = .fiveMin {
+        didSet {
+            UserDefaults.standard.set(refreshInterval.rawValue, forKey: "refreshInterval")
+            restartAutoRefresh()
+        }
+    }
+
     // MARK: - Sort
 
     enum SortMode: String, CaseIterable, Identifiable {
@@ -46,6 +57,20 @@ final class AccountsViewModel {
     private var hasSetup = false
     private var refreshTimer: Timer?
     private let fileWatcher = AuthFileWatcher()
+
+    // MARK: - Init
+
+    init() {
+        // Load persisted preferences (didSet does NOT fire during init)
+        if let raw = UserDefaults.standard.string(forKey: "menuBarDisplayMode"),
+           let mode = MenuBarDisplayMode(rawValue: raw) {
+            menuBarDisplayMode = mode
+        }
+        if let raw = UserDefaults.standard.string(forKey: "refreshInterval"),
+           let interval = RefreshInterval(rawValue: raw) {
+            refreshInterval = interval
+        }
+    }
 
     // MARK: - Computed
 
@@ -90,22 +115,54 @@ final class AccountsViewModel {
 
         var id: String { rawValue }
 
+        var icon: String {
+            switch self {
+            case .topAccount: return "arrow.up.circle"
+            case .lowestRemaining: return "arrow.down.circle"
+            case .iconOnly: return "eye.slash"
+            }
+        }
+
         var description: String {
             switch self {
-            case .topAccount: return "Shows remaining % for the first account in current sort order"
-            case .lowestRemaining: return "Shows the lowest remaining % across all accounts"
-            case .iconOnly: return "Shows only the icon with no text"
+            case .topAccount: return "% for top account in current sort"
+            case .lowestRemaining: return "Lowest % across all accounts"
+            case .iconOnly: return "Icon only, no number"
             }
         }
     }
 
-    var menuBarDisplayMode: MenuBarDisplayMode {
-        get {
-            let raw = UserDefaults.standard.string(forKey: "menuBarDisplayMode") ?? ""
-            return MenuBarDisplayMode(rawValue: raw) ?? .topAccount
+    // MARK: - Refresh Interval
+
+    enum RefreshInterval: String, CaseIterable, Identifiable {
+        case twoMin  = "2 minutes"
+        case fiveMin = "5 minutes"
+        case manual  = "Manual only"
+
+        var id: String { rawValue }
+
+        var seconds: TimeInterval? {
+            switch self {
+            case .twoMin:  return 120
+            case .fiveMin: return 300
+            case .manual:  return nil
+            }
         }
-        set {
-            UserDefaults.standard.set(newValue.rawValue, forKey: "menuBarDisplayMode")
+
+        var icon: String {
+            switch self {
+            case .twoMin:  return "bolt.fill"
+            case .fiveMin: return "clock"
+            case .manual:  return "hand.tap"
+            }
+        }
+
+        var description: String {
+            switch self {
+            case .twoMin:  return "Top account only, every 2 min"
+            case .fiveMin: return "All accounts every 5 min"
+            case .manual:  return "Only when you tap refresh"
+            }
         }
     }
 
@@ -232,12 +289,22 @@ final class AccountsViewModel {
 
     // MARK: - Auto Refresh
 
+    func restartAutoRefresh() {
+        startAutoRefresh()
+    }
+
     private func startAutoRefresh() {
         refreshTimer?.invalidate()
-        refreshTimer = Timer.scheduledTimer(withTimeInterval: 300, repeats: true) { [weak self] _ in
+        refreshTimer = nil
+        guard let interval = refreshInterval.seconds else { return }
+        refreshTimer = Timer.scheduledTimer(withTimeInterval: interval, repeats: true) { [weak self] _ in
             guard let self else { return }
             Task {
-                await self.refreshAll()
+                if self.refreshInterval == .twoMin, let top = self.sortedAccounts.first {
+                    await self.refreshAccount(top)
+                } else {
+                    await self.refreshAll()
+                }
             }
         }
     }
