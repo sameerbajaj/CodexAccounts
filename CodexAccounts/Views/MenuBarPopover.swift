@@ -161,12 +161,10 @@ struct MenuBarPopover: View {
                         account: account,
                         usage: viewModel.usageData[account.id],
                         status: viewModel.accountStatuses[account.id] ?? .active,
-                        warmUpState: viewModel.warmUpStates[account.id],
                         onRefresh: { Task { await viewModel.refreshAccount(account) } },
                         onRemove: { viewModel.removeAccount(account) },
                         onReauth: { viewModel.reauthAccount(account) },
-                        onTogglePin: { viewModel.togglePin(account) },
-                        onWarmUp: { viewModel.warmUp(account) }
+                        onTogglePin: { viewModel.togglePin(account) }
                     )
                 }
             }

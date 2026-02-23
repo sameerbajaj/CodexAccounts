@@ -48,11 +48,17 @@ enum UpdateChecker {
         }
 
         // 2. Check the rolling "latest" pre-release — compare published_at
-        //    against the app's build timestamp (CFBundleVersion = Unix seconds).
+        //    against the most recent known baseline. That baseline is the
+        //    greater of:
+        //     a) CFBundleVersion (build timestamp stamped by CI), and
+        //     b) the published_at we saved after the last self-update.
+        //    Without (b) the app enters an infinite update loop because
+        //    published_at is always later than build timestamp (the release
+        //    is created *after* the build finishes in CI).
         if let latest = releases.first(where: { $0.tagName == "latest" }),
            let publishedAt = latest.publishedAt {
-            let currentBuild = buildTimestamp
-            if currentBuild > 0 && publishedAt > currentBuild + 60 {
+            let baseline = max(buildTimestamp, lastInstalledRollingTimestamp)
+            if baseline > 0 && publishedAt > baseline + 60 {
                 // Remote is at least 1 min newer — a real push happened
                 return UpdateInfo(
                     version: "latest",
@@ -79,6 +85,22 @@ enum UpdateChecker {
         guard let s = Bundle.main.infoDictionary?["CFBundleVersion"] as? String,
               let ts = TimeInterval(s) else { return 0 }
         return ts
+    }
+
+    // MARK: - Last-installed rolling timestamp
+
+    private static let lastInstalledKey = "lastInstalledRollingTimestamp"
+
+    /// The `published_at` of the rolling release we last self-updated to.
+    /// Persisted in UserDefaults so it survives relaunch.
+    static var lastInstalledRollingTimestamp: TimeInterval {
+        UserDefaults.standard.double(forKey: lastInstalledKey)
+    }
+
+    /// Call after a successful self-update from a rolling release to prevent
+    /// the checker from re-detecting the same build as an update.
+    static func recordInstalledRollingTimestamp(_ publishedAt: TimeInterval) {
+        UserDefaults.standard.set(publishedAt, forKey: lastInstalledKey)
     }
 
     private static func normalise(_ tag: String) -> String {

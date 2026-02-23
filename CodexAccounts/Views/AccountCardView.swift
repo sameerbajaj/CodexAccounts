@@ -11,12 +11,10 @@ struct AccountCardView: View {
     let account: CodexAccount
     let usage: AccountUsage?
     let status: AccountStatus
-    let warmUpState: AccountsViewModel.WarmUpState?
     let onRefresh: () -> Void
     let onRemove: () -> Void
     let onReauth: () -> Void
     let onTogglePin: () -> Void
-    let onWarmUp: () -> Void
 
     @State private var isHovering = false
 
@@ -35,9 +33,6 @@ struct AccountCardView: View {
                         usageRows(usage)
                     } else {
                         loadingRow
-                    }
-                    if let state = warmUpState {
-                        warmUpRow(state)
                     }
                 }
                 .padding(.vertical, 11)
@@ -181,71 +176,6 @@ struct AccountCardView: View {
             }
             .padding(.top, 4)
         }
-    }
-
-    // MARK: - Warm-Up Row
-
-    @ViewBuilder
-    private func warmUpRow(_ state: AccountsViewModel.WarmUpState) -> some View {
-        HStack(spacing: 6) {
-            switch state {
-            case .available:
-                Image(systemName: "bolt.fill")
-                    .font(.system(size: 9))
-                    .foregroundStyle(.yellow)
-                Text("Quota reset — tap to warm up")
-                    .font(.system(size: 10))
-                    .foregroundStyle(.secondary)
-                Spacer()
-                Button(action: onWarmUp) {
-                    HStack(spacing: 3) {
-                        Image(systemName: "bolt.fill")
-                            .font(.system(size: 8, weight: .bold))
-                        Text("Warm Up")
-                            .font(.system(size: 10, weight: .semibold))
-                    }
-                }
-                .buttonStyle(.borderedProminent)
-                .tint(.yellow)
-                .controlSize(.mini)
-
-            case .warming:
-                ProgressView()
-                    .controlSize(.mini)
-                Text("Warming up model…")
-                    .font(.system(size: 10))
-                    .foregroundStyle(.secondary)
-                Spacer()
-
-            case .done:
-                Image(systemName: "checkmark.circle.fill")
-                    .font(.system(size: 10))
-                    .foregroundStyle(.green)
-                Text("Model warmed up!")
-                    .font(.system(size: 10))
-                    .foregroundStyle(.secondary)
-                Spacer()
-
-            case .failed(let msg):
-                Image(systemName: "exclamationmark.triangle.fill")
-                    .font(.system(size: 9))
-                    .foregroundStyle(.orange)
-                Text(msg)
-                    .font(.system(size: 9))
-                    .foregroundStyle(.orange)
-                    .lineLimit(2)
-                Spacer()
-                Button(action: onWarmUp) {
-                    Text("Retry")
-                        .font(.system(size: 10, weight: .medium))
-                }
-                .buttonStyle(.bordered)
-                .controlSize(.mini)
-            }
-        }
-        .padding(.top, 5)
-        .animation(.easeInOut(duration: 0.2), value: state)
-        .transition(.opacity.combined(with: .move(edge: .bottom)))
     }
 
     // MARK: - Reauth Row

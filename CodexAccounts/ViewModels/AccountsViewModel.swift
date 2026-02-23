@@ -21,19 +21,9 @@ final class AccountsViewModel {
     var detectedUntrackedEmail: String? = nil
     var sortMode: SortMode = .pinned
     var availableUpdate: UpdateInfo? = nil
-    var warmUpStates: [String: WarmUpState] = [:]
     var isCheckingForUpdates = false
     var updateCheckMessage: String? = nil
     var selfUpdateState: SelfUpdateState = .idle
-
-    // MARK: - Warm-Up State
-
-    enum WarmUpState: Equatable {
-        case available   // quota just reset — button visible
-        case warming     // request in flight
-        case done        // success — auto-clears after delay
-        case failed(String)
-    }
 
     // Stored so @Observable tracks changes and SwiftUI re-renders immediately
     var menuBarDisplayMode: MenuBarDisplayMode = .iconAndPercent {
