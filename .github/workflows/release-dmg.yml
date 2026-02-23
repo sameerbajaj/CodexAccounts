@@ -41,17 +41,22 @@ jobs:
           chmod +x scripts/build-dmg.sh
           scripts/build-dmg.sh "${{ steps.vars.outputs.version_suffix }}" "${{ steps.vars.outputs.marketing_version }}"
 
-      - name: Ensure rolling latest pre-release exists
+      - name: Recreate rolling latest pre-release (refreshes published_at)
         if: github.event_name != 'release'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          if ! gh release view latest >/dev/null 2>&1; then
-            gh release create latest \
-              --title "Latest build" \
-              --prerelease \
-              --notes "Auto-updated DMG from the latest push to main."
-          fi
+          # Always delete and recreate so published_at reflects the actual
+          # build time. The update checker compares published_at against the
+          # installed app's CFBundleVersion (build timestamp). If we only
+          # create-if-missing, published_at freezes at the first push and the
+          # checker never fires again.
+          gh release delete latest --cleanup-tag --yes 2>/dev/null || true
+          sleep 2   # give GitHub a moment to propagate the deletion
+          gh release create latest \
+            --title "Latest build" \
+            --prerelease \
+            --notes "Auto-updated DMG from the latest push to main."
 
       - name: Upload DMG to release
         env:
