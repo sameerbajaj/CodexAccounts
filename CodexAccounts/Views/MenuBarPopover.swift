@@ -47,6 +47,7 @@ struct MenuBarPopover: View {
         .animation(.easeInOut(duration: 0.2), value: viewModel.accounts.count)
         .animation(.easeInOut(duration: 0.2), value: showingSettings)
         .animation(.easeInOut(duration: 0.3), value: viewModel.availableUpdate?.version)
+        .animation(.easeInOut(duration: 0.25), value: viewModel.selfUpdateState)
         .task { viewModel.setup() }
     }
 
@@ -177,44 +178,119 @@ struct MenuBarPopover: View {
     // MARK: - Update Banner
 
     private func updateBanner(_ update: UpdateInfo) -> some View {
-        HStack(spacing: 8) {
-            ZStack {
-                Circle()
-                    .fill(Color.green.opacity(0.15))
-                    .frame(width: 22, height: 22)
-                Image(systemName: "arrow.down.circle.fill")
-                    .font(.system(size: 12))
-                    .foregroundStyle(.green)
+        VStack(spacing: 0) {
+            switch viewModel.selfUpdateState {
+            case .idle:
+                // Default: show version info and Install / Download button
+                HStack(spacing: 8) {
+                    ZStack {
+                        Circle()
+                            .fill(Color.green.opacity(0.15))
+                            .frame(width: 22, height: 22)
+                        Image(systemName: "arrow.down.circle.fill")
+                            .font(.system(size: 12))
+                            .foregroundStyle(.green)
+                    }
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text(update.isRolling ? "New build available" : "Update available — v\(update.version)")
+                            .font(.system(size: 11, weight: .semibold))
+                            .foregroundStyle(.primary)
+                        Text("Installs automatically — no drag & drop")
+                            .font(.system(size: 10))
+                            .foregroundStyle(.secondary)
+                    }
+                    Spacer()
+                    if update.downloadURL != nil {
+                        Button { viewModel.installUpdate() } label: {
+                            Text("Install")
+                                .font(.system(size: 10, weight: .semibold))
+                                .foregroundStyle(.white)
+                                .padding(.horizontal, 9)
+                                .padding(.vertical, 4)
+                                .background(Capsule().fill(Color.green))
+                        }
+                        .buttonStyle(.plain)
+                    } else {
+                        Button {
+                            NSWorkspace.shared.open(update.releaseURL)
+                        } label: {
+                            Text("Download")
+                                .font(.system(size: 10, weight: .semibold))
+                                .foregroundStyle(.white)
+                                .padding(.horizontal, 9)
+                                .padding(.vertical, 4)
+                                .background(Capsule().fill(Color.green))
+                        }
+                        .buttonStyle(.plain)
+                    }
+                    Button(action: { viewModel.dismissUpdate() }) {
+                        Image(systemName: "xmark")
+                            .font(.system(size: 8, weight: .bold))
+                            .foregroundStyle(.tertiary)
+                    }
+                    .buttonStyle(.plain)
+                }
+
+            case .downloading(let progress):
+                HStack(spacing: 8) {
+                    ProgressView()
+                        .controlSize(.small)
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text("Downloading update…")
+                            .font(.system(size: 11, weight: .semibold))
+                            .foregroundStyle(.primary)
+                        ProgressView(value: progress)
+                            .progressViewStyle(.linear)
+                            .tint(.green)
+                    }
+                    Text("\(Int(progress * 100))%")
+                        .font(.system(size: 10, weight: .medium))
+                        .foregroundStyle(.secondary)
+                        .frame(width: 32, alignment: .trailing)
+                }
+
+            case .installing:
+                HStack(spacing: 8) {
+                    ProgressView()
+                        .controlSize(.small)
+                    Text("Installing — app will relaunch…")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(.primary)
+                    Spacer()
+                }
+
+            case .failed(let message):
+                HStack(spacing: 8) {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .font(.system(size: 12))
+                        .foregroundStyle(.orange)
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text("Update failed")
+                            .font(.system(size: 11, weight: .semibold))
+                            .foregroundStyle(.primary)
+                        Text(message)
+                            .font(.system(size: 10))
+                            .foregroundStyle(.secondary)
+                            .lineLimit(2)
+                    }
+                    Spacer()
+                    Button {
+                        viewModel.selfUpdateState = .idle
+                    } label: {
+                        Text("Retry")
+                            .font(.system(size: 10, weight: .semibold))
+                            .foregroundStyle(.white)
+                            .padding(.horizontal, 9)
+                            .padding(.vertical, 4)
+                            .background(Capsule().fill(Color.orange))
+                    }
+                    .buttonStyle(.plain)
+                }
             }
-            VStack(alignment: .leading, spacing: 1) {
-                Text(update.isRolling ? "New build available" : "Update available — v\(update.version)")
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(.primary)
-                Text("Click to download")
-                    .font(.system(size: 10))
-                    .foregroundStyle(.secondary)
-            }
-            Spacer()
-            Button {
-                NSWorkspace.shared.open(update.downloadURL ?? update.releaseURL)
-            } label: {
-                Text(update.downloadURL == nil ? "Download" : "Install")
-                    .font(.system(size: 10, weight: .semibold))
-                    .foregroundStyle(.white)
-                    .padding(.horizontal, 9)
-                    .padding(.vertical, 4)
-                    .background(Capsule().fill(Color.green))
-            }
-            .buttonStyle(.plain)
-            Button(action: { viewModel.dismissUpdate() }) {
-                Image(systemName: "xmark")
-                    .font(.system(size: 8, weight: .bold))
-                    .foregroundStyle(.tertiary)
-            }
-            .buttonStyle(.plain)
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 9)
+        .animation(.easeInOut(duration: 0.25), value: viewModel.selfUpdateState)
     }
 
     // MARK: - Detected Banner

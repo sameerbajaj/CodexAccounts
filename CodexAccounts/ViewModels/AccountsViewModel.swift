@@ -24,6 +24,7 @@ final class AccountsViewModel {
     var warmUpStates: [String: WarmUpState] = [:]
     var isCheckingForUpdates = false
     var updateCheckMessage: String? = nil
+    var selfUpdateState: SelfUpdateState = .idle
 
     // MARK: - Warm-Up State
 
@@ -389,6 +390,16 @@ final class AccountsViewModel {
 
     func dismissUpdate() {
         availableUpdate = nil
+    }
+
+    /// Download, extract, replace, and relaunch in-place.
+    func installUpdate() {
+        guard let update = availableUpdate, let dmgURL = update.downloadURL else { return }
+        Task {
+            await SelfUpdater.update(dmgURL: dmgURL) { [weak self] state in
+                self?.selfUpdateState = state
+            }
+        }
     }
 
     // MARK: - Auto Refresh
