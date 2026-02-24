@@ -23,7 +23,7 @@ struct AccountCardView: View {
             // Left accent bar
             Rectangle()
                 .fill(accentColor)
-                .frame(width: 3)
+                .frame(width: 3.5)
                 .clipShape(
                     UnevenRoundedRectangle(
                         topLeadingRadius: 9,
@@ -127,15 +127,16 @@ struct AccountCardView: View {
         HStack(spacing: 10) {
             GeometryReader { proxy in
                 ZStack(alignment: .leading) {
-                    RoundedRectangle(cornerRadius: 4)
-                        .fill(Color.white.opacity(0.12))
-                    RoundedRectangle(cornerRadius: 4)
+                    RoundedRectangle(cornerRadius: 4.5)
+                        .fill(Color.white.opacity(0.10))
+                    RoundedRectangle(cornerRadius: 4.5)
                         .fill(barGradient(for: usage.remainingPercent))
                         .frame(width: max(0, proxy.size.width * CGFloat(min(100, max(0, usage.remainingPercent)) / 100)))
+                        .shadow(color: barGlowColor(for: usage.remainingPercent), radius: 4, y: 0)
                         .animation(.spring(duration: 0.5), value: usage.remainingPercent)
                 }
             }
-            .frame(height: 8)
+            .frame(height: 9)
 
             Text("\(Int(min(100, max(0, usage.remainingPercent))))%")
                 .font(.system(size: 14, weight: .bold, design: .monospaced))
@@ -153,7 +154,7 @@ struct AccountCardView: View {
                     Text("Resets \(resetAt.resetDescription)")
                         .font(.system(size: 10))
                 }
-                .foregroundStyle(Color.white.opacity(0.42))
+                .foregroundStyle(Color.white.opacity(0.55))
             }
 
             Spacer()
@@ -162,7 +163,7 @@ struct AccountCardView: View {
                 if let shortId = account.shortAccountId {
                     Text(shortId)
                         .font(.system(size: 9, design: .monospaced))
-                        .foregroundStyle(Color.white.opacity(0.28))
+                        .foregroundStyle(Color.white.opacity(0.38))
                         .help(account.accountId ?? "")
                 }
                 if case .refreshing = status {
@@ -170,7 +171,7 @@ struct AccountCardView: View {
                 } else {
                     Text("  \(usage.lastUpdated.relativeDescription)")
                         .font(.system(size: 9))
-                        .foregroundStyle(Color.white.opacity(0.28))
+                        .foregroundStyle(Color.white.opacity(0.38))
                 }
             }
         }
@@ -199,7 +200,7 @@ struct AccountCardView: View {
                 .foregroundStyle(.orange)
             Text("Session expired")
                 .font(.system(size: 11))
-                .foregroundStyle(Color.white.opacity(0.55))
+                .foregroundStyle(Color.white.opacity(0.65))
             Spacer()
             Button(action: onReauth) {
                 Text("Re-authenticate")
@@ -219,7 +220,7 @@ struct AccountCardView: View {
             ProgressView().controlSize(.small)
             Text("Loading...")
                 .font(.system(size: 11))
-                .foregroundStyle(Color.white.opacity(0.45))
+                .foregroundStyle(Color.white.opacity(0.55))
         }
         .padding(.top, 8)
     }
@@ -243,39 +244,58 @@ struct AccountCardView: View {
     private var cardBackground: some View {
         Group {
             if account.isPinned {
-                Color(red: 1.0, green: 0.55, blue: 0.1)
-                    .opacity(isHovering ? 0.14 : 0.08)
+                LinearGradient(
+                    colors: [
+                        Color(red: 0.22, green: 0.14, blue: 0.08).opacity(isHovering ? 0.9 : 0.7),
+                        Color(red: 0.18, green: 0.12, blue: 0.06).opacity(isHovering ? 0.9 : 0.7)
+                    ],
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                )
             } else {
-                Color.white.opacity(isHovering ? 0.10 : 0.065)
+                LinearGradient(
+                    colors: [
+                        Color.white.opacity(isHovering ? 0.12 : 0.08),
+                        Color.white.opacity(isHovering ? 0.09 : 0.055)
+                    ],
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                )
             }
         }
     }
 
     private var borderColor: Color {
-        if account.isPinned { return Color.orange.opacity(0.28) }
-        return Color.white.opacity(isHovering ? 0.16 : 0.09)
+        if account.isPinned { return Color.orange.opacity(isHovering ? 0.40 : 0.30) }
+        return Color.white.opacity(isHovering ? 0.20 : 0.12)
     }
 
     private func barGradient(for remaining: Double) -> LinearGradient {
         if remaining > 40 {
             return LinearGradient(
-                colors: [Color(red: 0.22, green: 0.82, blue: 0.48), Color(red: 0.12, green: 0.70, blue: 0.38)],
+                colors: [Color(red: 0.18, green: 0.82, blue: 0.52), Color(red: 0.10, green: 0.72, blue: 0.40)],
                 startPoint: .leading, endPoint: .trailing)
         } else if remaining > 15 {
             return LinearGradient(
-                colors: [Color(red: 1.0, green: 0.68, blue: 0.15), Color(red: 1.0, green: 0.52, blue: 0.08)],
+                colors: [Color(red: 1.0, green: 0.72, blue: 0.18), Color(red: 1.0, green: 0.55, blue: 0.10)],
                 startPoint: .leading, endPoint: .trailing)
         } else {
             return LinearGradient(
-                colors: [Color(red: 1.0, green: 0.32, blue: 0.30), Color(red: 0.88, green: 0.20, blue: 0.20)],
+                colors: [Color(red: 1.0, green: 0.35, blue: 0.30), Color(red: 0.90, green: 0.22, blue: 0.20)],
                 startPoint: .leading, endPoint: .trailing)
         }
     }
 
+    private func barGlowColor(for remaining: Double) -> Color {
+        if remaining > 40 { return Color(red: 0.18, green: 0.82, blue: 0.52).opacity(0.35) }
+        else if remaining > 15 { return Color(red: 1.0, green: 0.65, blue: 0.15).opacity(0.30) }
+        else { return Color(red: 1.0, green: 0.30, blue: 0.25).opacity(0.30) }
+    }
+
     private func percentColor(for remaining: Double) -> Color {
-        if remaining > 40 { return Color(red: 0.25, green: 0.85, blue: 0.50) }
-        else if remaining > 15 { return Color(red: 1.0, green: 0.68, blue: 0.15) }
-        else { return Color(red: 1.0, green: 0.38, blue: 0.38) }
+        if remaining > 40 { return Color(red: 0.30, green: 0.90, blue: 0.55) }
+        else if remaining > 15 { return Color(red: 1.0, green: 0.72, blue: 0.20) }
+        else { return Color(red: 1.0, green: 0.40, blue: 0.40) }
     }
 }
 
@@ -286,10 +306,10 @@ struct PlanBadge: View {
 
     var body: some View {
         Text(displayName)
-            .font(.system(size: 8.5, weight: .bold, design: .rounded))
+            .font(.system(size: 9, weight: .heavy, design: .rounded))
             .foregroundStyle(.white)
-            .padding(.horizontal, 7)
-            .padding(.vertical, 2.5)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 3)
             .background(Capsule().fill(badgeGradient))
     }
 
@@ -309,17 +329,19 @@ struct PlanBadge: View {
     private var badgeGradient: LinearGradient {
         switch plan.lowercased() {
         case "pro":
-            return LinearGradient(colors: [Color(red: 0.60, green: 0.32, blue: 1.0), Color(red: 0.42, green: 0.22, blue: 0.88)], startPoint: .leading, endPoint: .trailing)
+            return LinearGradient(colors: [Color(red: 0.65, green: 0.35, blue: 1.0), Color(red: 0.50, green: 0.25, blue: 0.92)], startPoint: .leading, endPoint: .trailing)
         case "plus":
-            return LinearGradient(colors: [Color(red: 0.28, green: 0.52, blue: 1.0), Color(red: 0.12, green: 0.68, blue: 0.96)], startPoint: .leading, endPoint: .trailing)
+            return LinearGradient(colors: [Color(red: 0.30, green: 0.55, blue: 1.0), Color(red: 0.15, green: 0.70, blue: 0.98)], startPoint: .leading, endPoint: .trailing)
         case "go":
-            return LinearGradient(colors: [Color(red: 0.12, green: 0.72, blue: 0.62), Color(red: 0.08, green: 0.80, blue: 0.52)], startPoint: .leading, endPoint: .trailing)
+            return LinearGradient(colors: [Color(red: 0.10, green: 0.72, blue: 0.58), Color(red: 0.05, green: 0.82, blue: 0.50)], startPoint: .leading, endPoint: .trailing)
         case "team":
-            return LinearGradient(colors: [Color(red: 1.0, green: 0.58, blue: 0.12), Color(red: 1.0, green: 0.72, blue: 0.12)], startPoint: .leading, endPoint: .trailing)
+            return LinearGradient(colors: [Color(red: 1.0, green: 0.60, blue: 0.15), Color(red: 1.0, green: 0.75, blue: 0.15)], startPoint: .leading, endPoint: .trailing)
         case "enterprise":
-            return LinearGradient(colors: [Color(red: 1.0, green: 0.72, blue: 0.12), Color(red: 1.0, green: 0.58, blue: 0.12)], startPoint: .leading, endPoint: .trailing)
+            return LinearGradient(colors: [Color(red: 1.0, green: 0.75, blue: 0.15), Color(red: 1.0, green: 0.60, blue: 0.15)], startPoint: .leading, endPoint: .trailing)
+        case "free":
+            return LinearGradient(colors: [Color(red: 0.45, green: 0.48, blue: 0.55), Color(red: 0.35, green: 0.38, blue: 0.45)], startPoint: .leading, endPoint: .trailing)
         default:
-            return LinearGradient(colors: [Color(white: 0.42), Color(white: 0.34)], startPoint: .leading, endPoint: .trailing)
+            return LinearGradient(colors: [Color(white: 0.45), Color(white: 0.38)], startPoint: .leading, endPoint: .trailing)
         }
     }
 }
