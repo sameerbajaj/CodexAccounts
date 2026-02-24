@@ -30,10 +30,29 @@ jobs:
             echo "version_suffix=$TAG" >> "$GITHUB_OUTPUT"
             echo "target_tag=$TAG" >> "$GITHUB_OUTPUT"
             echo "marketing_version=$VERSION" >> "$GITHUB_OUTPUT"
+            echo "display_version=$TAG" >> "$GITHUB_OUTPUT"
           else
+            # Push-to-main builds: auto-bump a lightweight version so every
+            # push has a unique app version and it is visible on the release.
+            # Format: <latest stable major>.<latest stable minor>.<run number>
+            # Example: if latest stable is v1.4.0 and run_number=237,
+            # marketing version becomes 1.4.237.
+            git fetch --force --tags >/dev/null 2>&1 || true
+            LATEST_STABLE_TAG="$(git tag -l 'v[0-9]*.[0-9]*.[0-9]*' | sort -V | tail -n1)"
+
+            if [[ -n "$LATEST_STABLE_TAG" ]]; then
+              BASE="${LATEST_STABLE_TAG#v}"
+              IFS='.' read -r MAJOR MINOR PATCH <<< "$BASE"
+            else
+              MAJOR=1
+              MINOR=0
+            fi
+
+            PUSH_VERSION="${MAJOR}.${MINOR}.${GITHUB_RUN_NUMBER}"
             echo "version_suffix=latest" >> "$GITHUB_OUTPUT"
             echo "target_tag=latest" >> "$GITHUB_OUTPUT"
-            echo "marketing_version=" >> "$GITHUB_OUTPUT"
+            echo "marketing_version=$PUSH_VERSION" >> "$GITHUB_OUTPUT"
+            echo "display_version=v$PUSH_VERSION" >> "$GITHUB_OUTPUT"
           fi
 
       - name: Build DMG
@@ -54,9 +73,12 @@ jobs:
           gh release delete latest --cleanup-tag --yes 2>/dev/null || true
           sleep 2   # give GitHub a moment to propagate the deletion
           gh release create latest \
-            --title "Latest build" \
+            --title "Latest build (${{ steps.vars.outputs.display_version }})" \
             --prerelease \
-            --notes "Auto-updated DMG from the latest push to main."
+            --notes "Auto-updated DMG from the latest push to main.
+
+            Version: ${{ steps.vars.outputs.display_version }}
+            Commit: ${{ github.sha }}"
 
       - name: Upload DMG to release
         env:
