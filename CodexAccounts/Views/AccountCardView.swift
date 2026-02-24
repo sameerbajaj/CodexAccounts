@@ -19,24 +19,38 @@ struct AccountCardView: View {
     @State private var isHovering = false
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            // Header row
-            HStack(spacing: 8) {
-                statusIndicator
-                    .frame(width: 3)
+        HStack(spacing: 0) {
+            // Left accent bar
+            Rectangle()
+                .fill(accentColor)
+                .frame(width: 3)
+                .clipShape(
+                    UnevenRoundedRectangle(
+                        topLeadingRadius: 9,
+                        bottomLeadingRadius: 9,
+                        bottomTrailingRadius: 0,
+                        topTrailingRadius: 0
+                    )
+                )
 
-                VStack(alignment: .leading, spacing: 2) {
-                    headerRow
-                    if case .needsReauth = status {
-                        reauthRow
-                    } else if let usage {
-                        usageRows(usage)
-                    } else {
-                        loadingRow
-                    }
+            VStack(alignment: .leading, spacing: 0) {
+                headerRow
+                    .padding(.top, 11)
+                    .padding(.horizontal, 12)
+
+                if case .needsReauth = status {
+                    reauthRow
+                        .padding(.horizontal, 12)
+                        .padding(.bottom, 11)
+                } else if let usage {
+                    usageRows(usage)
+                        .padding(.horizontal, 12)
+                        .padding(.bottom, 11)
+                } else {
+                    loadingRow
+                        .padding(.horizontal, 12)
+                        .padding(.bottom, 11)
                 }
-                .padding(.vertical, 11)
-                .padding(.trailing, 12)
             }
         }
         .background(cardBackground)
@@ -49,38 +63,22 @@ struct AccountCardView: View {
         .animation(.easeInOut(duration: 0.15), value: isHovering)
     }
 
-    // MARK: - Status Indicator (left accent bar)
-
-    private var statusIndicator: some View {
-        Rectangle()
-            .fill(statusBarColor)
-            .frame(width: 3)
-            .clipShape(
-                UnevenRoundedRectangle(
-                    topLeadingRadius: 9,
-                    bottomLeadingRadius: 9,
-                    bottomTrailingRadius: 0,
-                    topTrailingRadius: 0
-                )
-            )
-    }
-
     // MARK: - Header Row
 
     private var headerRow: some View {
         HStack(spacing: 6) {
             Text(account.email)
-                .font(.system(size: 12, weight: .semibold))
-                .foregroundStyle(.primary)
+                .font(.system(size: 12.5, weight: .semibold))
+                .foregroundStyle(.white)
                 .lineLimit(1)
                 .truncationMode(.middle)
 
-            Spacer(minLength: 2)
+            Spacer(minLength: 4)
 
             if account.isPinned {
                 Image(systemName: "pin.fill")
                     .font(.system(size: 8))
-                    .foregroundStyle(.orange.opacity(0.8))
+                    .foregroundStyle(Color.orange.opacity(0.9))
             }
 
             PlanBadge(plan: account.planType)
@@ -109,10 +107,10 @@ struct AccountCardView: View {
         } label: {
             ZStack {
                 RoundedRectangle(cornerRadius: 5)
-                    .fill(Color.primary.opacity(isHovering ? 0.10 : 0))
+                    .fill(Color.white.opacity(isHovering ? 0.10 : 0))
                 Image(systemName: "ellipsis")
                     .font(.system(size: 10, weight: .semibold))
-                    .foregroundStyle(Color.primary.opacity(0.55))
+                    .foregroundStyle(Color.white.opacity(0.6))
             }
             .frame(width: 24, height: 20)
         }
@@ -125,13 +123,29 @@ struct AccountCardView: View {
 
     @ViewBuilder
     private func usageRows(_ usage: AccountUsage) -> some View {
-        UsageMeterView(
-            remainingPercent: usage.remainingPercent
-        )
-        .padding(.top, 5)
+        // Usage bar + big % — no redundant label
+        HStack(spacing: 10) {
+            GeometryReader { proxy in
+                ZStack(alignment: .leading) {
+                    RoundedRectangle(cornerRadius: 4)
+                        .fill(Color.white.opacity(0.1))
+                    RoundedRectangle(cornerRadius: 4)
+                        .fill(barGradient(for: usage.remainingPercent))
+                        .frame(width: max(0, proxy.size.width * CGFloat(min(100, max(0, usage.remainingPercent)) / 100)))
+                        .animation(.spring(duration: 0.5), value: usage.remainingPercent)
+                }
+            }
+            .frame(height: 7)
 
+            Text("\(Int(min(100, max(0, usage.remainingPercent))))%")
+                .font(.system(size: 14, weight: .bold, design: .monospaced))
+                .foregroundStyle(percentColor(for: usage.remainingPercent))
+                .frame(width: 44, alignment: .trailing)
+        }
+        .padding(.top, 8)
+
+        // Reset + meta row
         HStack(spacing: 0) {
-            // Reset time
             if let resetAt = usage.resetAt {
                 HStack(spacing: 3) {
                     Image(systemName: "arrow.clockwise")
@@ -139,17 +153,16 @@ struct AccountCardView: View {
                     Text("Resets \(resetAt.resetDescription)")
                         .font(.system(size: 10))
                 }
-                .foregroundStyle(.secondary)
+                .foregroundStyle(Color.white.opacity(0.35))
             }
 
             Spacer()
 
-            // Profile UUID + timestamp
             Group {
                 if let shortId = account.shortAccountId {
                     Text(shortId)
                         .font(.system(size: 9, design: .monospaced))
-                        .foregroundStyle(Color.primary.opacity(0.3))
+                        .foregroundStyle(Color.white.opacity(0.2))
                         .help(account.accountId ?? "")
                 }
                 if case .refreshing = status {
@@ -157,13 +170,12 @@ struct AccountCardView: View {
                 } else {
                     Text("  \(usage.lastUpdated.relativeDescription)")
                         .font(.system(size: 9))
-                        .foregroundStyle(Color.primary.opacity(0.28))
+                        .foregroundStyle(Color.white.opacity(0.2))
                 }
             }
         }
         .padding(.top, 5)
 
-        // Error
         if let error = usage.error {
             HStack(spacing: 4) {
                 Image(systemName: "exclamationmark.triangle.fill")
@@ -187,7 +199,7 @@ struct AccountCardView: View {
                 .foregroundStyle(.orange)
             Text("Session expired")
                 .font(.system(size: 11))
-                .foregroundStyle(.secondary)
+                .foregroundStyle(Color.white.opacity(0.5))
             Spacer()
             Button(action: onReauth) {
                 Text("Re-authenticate")
@@ -197,24 +209,24 @@ struct AccountCardView: View {
             .tint(.orange)
             .controlSize(.mini)
         }
-        .padding(.top, 5)
+        .padding(.top, 8)
     }
 
     // MARK: - Loading Row
 
     private var loadingRow: some View {
-        HStack(spacing: 5) {
+        HStack(spacing: 6) {
             ProgressView().controlSize(.small)
             Text("Loading...")
                 .font(.system(size: 11))
-                .foregroundStyle(.secondary)
+                .foregroundStyle(Color.white.opacity(0.35))
         }
-        .padding(.top, 5)
+        .padding(.top, 8)
     }
 
-    // MARK: - Computed Colors
+    // MARK: - Colors
 
-    private var statusBarColor: Color {
+    private var accentColor: Color {
         switch status {
         case .active:
             guard let usage else { return .green }
@@ -222,7 +234,7 @@ struct AccountCardView: View {
             if r > 40 { return .green }
             else if r > 15 { return .orange }
             else { return .red }
-        case .refreshing: return .blue.opacity(0.6)
+        case .refreshing: return Color(red: 0.3, green: 0.55, blue: 1.0)
         case .needsReauth: return .orange
         case .error: return .red
         }
@@ -231,69 +243,39 @@ struct AccountCardView: View {
     private var cardBackground: some View {
         Group {
             if account.isPinned {
-                Color.orange.opacity(isHovering ? 0.07 : 0.04)
+                Color(red: 1.0, green: 0.55, blue: 0.1)
+                    .opacity(isHovering ? 0.12 : 0.07)
             } else {
-                Color.primary.opacity(isHovering ? 0.06 : 0.03)
+                Color.white.opacity(isHovering ? 0.1 : 0.055)
             }
         }
     }
 
     private var borderColor: Color {
-        if account.isPinned { return .orange.opacity(0.18) }
-        return Color.primary.opacity(isHovering ? 0.1 : 0.05)
-    }
-}
-
-// MARK: - Usage Meter (stand-alone bar + % label)
-
-struct UsageMeterView: View {
-    let remainingPercent: Double
-
-    private var clamped: Double { min(100, max(0, remainingPercent)) }
-
-    var body: some View {
-        HStack(spacing: 8) {
-            Text("Codex Usage")
-                .font(.system(size: 10.5, weight: .medium))
-                .foregroundStyle(.secondary)
-                .frame(width: 80, alignment: .leading)
-
-            GeometryReader { proxy in
-                ZStack(alignment: .leading) {
-                    RoundedRectangle(cornerRadius: 3)
-                        .fill(Color.primary.opacity(0.07))
-                    RoundedRectangle(cornerRadius: 3)
-                        .fill(barGradient)
-                        .frame(width: max(0, proxy.size.width * CGFloat(clamped / 100)))
-                        .animation(.spring(duration: 0.5), value: remainingPercent)
-                }
-            }
-            .frame(height: 7)
-
-            Text("\(Int(clamped))%")
-                .font(.system(size: 12, weight: .bold, design: .monospaced))
-                .foregroundStyle(percentColor)
-                .frame(width: 36, alignment: .trailing)
-        }
+        if account.isPinned { return Color.orange.opacity(0.25) }
+        return Color.white.opacity(isHovering ? 0.14 : 0.07)
     }
 
-    private var barGradient: LinearGradient {
-        if remainingPercent > 40 {
-            return LinearGradient(colors: [.green, .green.opacity(0.7)],
-                                  startPoint: .leading, endPoint: .trailing)
-        } else if remainingPercent > 15 {
-            return LinearGradient(colors: [.orange, .yellow.opacity(0.8)],
-                                  startPoint: .leading, endPoint: .trailing)
+    private func barGradient(for remaining: Double) -> LinearGradient {
+        if remaining > 40 {
+            return LinearGradient(
+                colors: [Color(red: 0.2, green: 0.85, blue: 0.45), Color(red: 0.1, green: 0.72, blue: 0.35)],
+                startPoint: .leading, endPoint: .trailing)
+        } else if remaining > 15 {
+            return LinearGradient(
+                colors: [Color(red: 1.0, green: 0.65, blue: 0.1), Color(red: 1.0, green: 0.5, blue: 0.05)],
+                startPoint: .leading, endPoint: .trailing)
         } else {
-            return LinearGradient(colors: [.red, .red.opacity(0.7)],
-                                  startPoint: .leading, endPoint: .trailing)
+            return LinearGradient(
+                colors: [Color(red: 1.0, green: 0.28, blue: 0.28), Color(red: 0.9, green: 0.18, blue: 0.18)],
+                startPoint: .leading, endPoint: .trailing)
         }
     }
 
-    private var percentColor: Color {
-        if remainingPercent > 40 { return .green }
-        else if remainingPercent > 15 { return .orange }
-        else { return .red }
+    private func percentColor(for remaining: Double) -> Color {
+        if remaining > 40 { return Color(red: 0.2, green: 0.85, blue: 0.45) }
+        else if remaining > 15 { return Color(red: 1.0, green: 0.65, blue: 0.1) }
+        else { return Color(red: 1.0, green: 0.35, blue: 0.35) }
     }
 }
 
@@ -327,17 +309,17 @@ struct PlanBadge: View {
     private var badgeGradient: LinearGradient {
         switch plan.lowercased() {
         case "pro":
-            return LinearGradient(colors: [.purple, .indigo], startPoint: .leading, endPoint: .trailing)
+            return LinearGradient(colors: [Color(red: 0.58, green: 0.3, blue: 1.0), Color(red: 0.4, green: 0.2, blue: 0.85)], startPoint: .leading, endPoint: .trailing)
         case "plus":
-            return LinearGradient(colors: [.blue, .cyan], startPoint: .leading, endPoint: .trailing)
+            return LinearGradient(colors: [Color(red: 0.25, green: 0.5, blue: 1.0), Color(red: 0.1, green: 0.65, blue: 0.95)], startPoint: .leading, endPoint: .trailing)
         case "go":
-            return LinearGradient(colors: [.teal, .mint], startPoint: .leading, endPoint: .trailing)
+            return LinearGradient(colors: [Color(red: 0.1, green: 0.72, blue: 0.65), Color(red: 0.05, green: 0.82, blue: 0.55)], startPoint: .leading, endPoint: .trailing)
         case "team":
-            return LinearGradient(colors: [.orange, .yellow], startPoint: .leading, endPoint: .trailing)
+            return LinearGradient(colors: [Color(red: 1.0, green: 0.55, blue: 0.1), Color(red: 1.0, green: 0.75, blue: 0.1)], startPoint: .leading, endPoint: .trailing)
         case "enterprise":
-            return LinearGradient(colors: [.yellow, .orange], startPoint: .leading, endPoint: .trailing)
+            return LinearGradient(colors: [Color(red: 1.0, green: 0.75, blue: 0.1), Color(red: 1.0, green: 0.55, blue: 0.1)], startPoint: .leading, endPoint: .trailing)
         default:
-            return LinearGradient(colors: [.gray, .gray.opacity(0.7)], startPoint: .leading, endPoint: .trailing)
+            return LinearGradient(colors: [Color(white: 0.4), Color(white: 0.32)], startPoint: .leading, endPoint: .trailing)
         }
     }
 }
