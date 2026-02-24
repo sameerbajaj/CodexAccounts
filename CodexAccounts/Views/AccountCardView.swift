@@ -110,7 +110,7 @@ struct AccountCardView: View {
                     .fill(Color.white.opacity(isHovering ? 0.10 : 0))
                 Image(systemName: "ellipsis")
                     .font(.system(size: 10, weight: .semibold))
-                    .foregroundStyle(Color.white.opacity(0.55))
+                    .foregroundStyle(Color.white.opacity(0.75))
             }
             .frame(width: 24, height: 20)
         }
@@ -154,7 +154,7 @@ struct AccountCardView: View {
                     Text("Resets \(resetAt.resetDescription)")
                         .font(.system(size: 10))
                 }
-                .foregroundStyle(Color.white.opacity(0.55))
+                .foregroundStyle(Color.white.opacity(0.75))
             }
 
             Spacer()
@@ -163,7 +163,7 @@ struct AccountCardView: View {
                 if let shortId = account.shortAccountId {
                     Text(shortId)
                         .font(.system(size: 9, design: .monospaced))
-                        .foregroundStyle(Color.white.opacity(0.38))
+                        .foregroundStyle(Color.white.opacity(0.60))
                         .help(account.accountId ?? "")
                 }
                 if case .refreshing = status {
@@ -171,7 +171,7 @@ struct AccountCardView: View {
                 } else {
                     Text("  \(usage.lastUpdated.relativeDescription)")
                         .font(.system(size: 9))
-                        .foregroundStyle(Color.white.opacity(0.38))
+                        .foregroundStyle(Color.white.opacity(0.60))
                 }
             }
         }
@@ -200,7 +200,7 @@ struct AccountCardView: View {
                 .foregroundStyle(.orange)
             Text("Session expired")
                 .font(.system(size: 11))
-                .foregroundStyle(Color.white.opacity(0.65))
+                .foregroundStyle(Color.white.opacity(0.85))
             Spacer()
             Button(action: onReauth) {
                 Text("Re-authenticate")
@@ -220,7 +220,7 @@ struct AccountCardView: View {
             ProgressView().controlSize(.small)
             Text("Loading...")
                 .font(.system(size: 11))
-                .foregroundStyle(Color.white.opacity(0.55))
+                .foregroundStyle(Color.white.opacity(0.75))
         }
         .padding(.top, 8)
     }
@@ -244,30 +244,16 @@ struct AccountCardView: View {
     private var cardBackground: some View {
         Group {
             if account.isPinned {
-                LinearGradient(
-                    colors: [
-                        Color(red: 0.22, green: 0.14, blue: 0.08).opacity(isHovering ? 0.9 : 0.7),
-                        Color(red: 0.18, green: 0.12, blue: 0.06).opacity(isHovering ? 0.9 : 0.7)
-                    ],
-                    startPoint: .topLeading,
-                    endPoint: .bottomTrailing
-                )
+                Color.orange.opacity(isHovering ? 0.20 : 0.12)
             } else {
-                LinearGradient(
-                    colors: [
-                        Color.white.opacity(isHovering ? 0.12 : 0.08),
-                        Color.white.opacity(isHovering ? 0.09 : 0.055)
-                    ],
-                    startPoint: .topLeading,
-                    endPoint: .bottomTrailing
-                )
+                Color.white.opacity(isHovering ? 0.12 : 0.07)
             }
         }
     }
 
     private var borderColor: Color {
-        if account.isPinned { return Color.orange.opacity(isHovering ? 0.40 : 0.30) }
-        return Color.white.opacity(isHovering ? 0.20 : 0.12)
+        if account.isPinned { return Color.orange.opacity(isHovering ? 0.40 : 0.25) }
+        return Color.white.opacity(isHovering ? 0.25 : 0.15)
     }
 
     private func barGradient(for remaining: Double) -> LinearGradient {

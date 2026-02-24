@@ -43,16 +43,7 @@ struct MenuBarPopover: View {
             footer
         }
         .frame(width: 360)
-        .background(
-            LinearGradient(
-                colors: [
-                    Color(red: 0.09, green: 0.09, blue: 0.12),
-                    Color(red: 0.07, green: 0.07, blue: 0.10)
-                ],
-                startPoint: .top,
-                endPoint: .bottom
-            )
-        )
+        .background(Color(red: 0.14, green: 0.14, blue: 0.16))
         .preferredColorScheme(.dark)
         .animation(.easeInOut(duration: 0.2), value: viewModel.showingAddAccount)
         .animation(.easeInOut(duration: 0.2), value: viewModel.accounts.count)
@@ -111,12 +102,12 @@ struct MenuBarPopover: View {
                             Text(viewModel.sortMode.rawValue)
                                 .font(.system(size: 10, weight: .medium))
                         }
-                        .foregroundStyle(Color.white.opacity(0.55))
+                        .foregroundStyle(Color.white.opacity(0.80))
                         .padding(.horizontal, 8)
                         .padding(.vertical, 4)
                         .background(
                             RoundedRectangle(cornerRadius: 6)
-                                .fill(Color.white.opacity(0.10))
+                                .fill(Color.white.opacity(0.15))
                         )
                     }
                     .menuStyle(.borderlessButton)
@@ -127,7 +118,7 @@ struct MenuBarPopover: View {
                     }) {
                         Image(systemName: "arrow.clockwise")
                             .font(.system(size: 12, weight: .medium))
-                            .foregroundStyle(Color.white.opacity(0.55))
+                            .foregroundStyle(Color.white.opacity(0.80))
                             .rotationEffect(.degrees(viewModel.isRefreshing ? 360 : 0))
                             .animation(
                                 viewModel.isRefreshing
@@ -203,7 +194,7 @@ struct MenuBarPopover: View {
                             .foregroundStyle(.white)
                         Text("Installs automatically — no drag & drop")
                             .font(.system(size: 10))
-                            .foregroundStyle(Color.white.opacity(0.60))
+                            .foregroundStyle(Color.white.opacity(0.80))
                     }
                     Spacer()
                     if update.downloadURL != nil {
@@ -248,7 +239,7 @@ struct MenuBarPopover: View {
                     }
                     Text("\(Int(progress * 100))%")
                         .font(.system(size: 10, weight: .medium))
-                        .foregroundStyle(Color.white.opacity(0.65))
+                        .foregroundStyle(Color.white.opacity(0.80))
                         .frame(width: 32, alignment: .trailing)
                 }
 
@@ -272,7 +263,7 @@ struct MenuBarPopover: View {
                             .foregroundStyle(.white)
                         Text(message)
                             .font(.system(size: 10))
-                            .foregroundStyle(Color.white.opacity(0.50))
+                            .foregroundStyle(Color.white.opacity(0.70))
                             .lineLimit(2)
                     }
                     Spacer()
@@ -316,7 +307,7 @@ struct MenuBarPopover: View {
                     .font(.system(size: 8, weight: .bold))
             }
             .buttonStyle(.plain)
-            .foregroundStyle(Color.white.opacity(0.35))
+            .foregroundStyle(Color.white.opacity(0.60))
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 10)
@@ -360,7 +351,7 @@ struct MenuBarPopover: View {
                 HStack(alignment: .top, spacing: 10) {
                     Image(systemName: "arrow.triangle.2.circlepath.circle")
                         .font(.system(size: 13, weight: .medium))
-                        .foregroundStyle(Color.white.opacity(0.60))
+                        .foregroundStyle(Color.white.opacity(0.80))
                         .frame(width: 16)
                     VStack(alignment: .leading, spacing: 2) {
                         Text("Check automatically on launch")
@@ -368,7 +359,7 @@ struct MenuBarPopover: View {
                             .foregroundStyle(.white)
                         Text("Detect new versions / latest builds on startup")
                             .font(.system(size: 10.5))
-                            .foregroundStyle(Color.white.opacity(0.55))
+                            .foregroundStyle(Color.white.opacity(0.75))
                     }
                     Spacer()
                     Toggle("", isOn: $viewModel.autoCheckUpdatesOnLaunch)
@@ -399,7 +390,7 @@ struct MenuBarPopover: View {
                 if let message = viewModel.updateCheckMessage {
                     Text(message)
                         .font(.system(size: 10.5, weight: .medium))
-                        .foregroundStyle(Color.white.opacity(0.60))
+                        .foregroundStyle(Color.white.opacity(0.80))
                         .padding(.horizontal, 14)
                         .padding(.bottom, 10)
                 }
@@ -411,7 +402,7 @@ struct MenuBarPopover: View {
         VStack(alignment: .leading, spacing: 4) {
             Text(title)
                 .font(.system(size: 9.5, weight: .bold))
-                .foregroundStyle(Color.white.opacity(0.50))
+                .foregroundStyle(Color.white.opacity(0.70))
                 .textCase(.uppercase)
                 .tracking(1.2)
                 .padding(.horizontal, 14)
@@ -431,7 +422,7 @@ struct MenuBarPopover: View {
                 ZStack {
                     Circle()
                         .strokeBorder(
-                            isSelected ? Color.accentColor : Color.white.opacity(0.25),
+                            isSelected ? Color.accentColor : Color.white.opacity(0.50),
                             lineWidth: 1.5
                         )
                         .frame(width: 14, height: 14)
@@ -444,16 +435,16 @@ struct MenuBarPopover: View {
 
                 Image(systemName: icon)
                     .font(.system(size: 11))
-                    .foregroundStyle(isSelected ? Color.accentColor : Color.white.opacity(0.60))
+                    .foregroundStyle(isSelected ? Color.accentColor : Color.white.opacity(0.80))
                     .frame(width: 16)
 
                 VStack(alignment: .leading, spacing: 1) {
                     Text(label)
                         .font(.system(size: 12, weight: isSelected ? .semibold : .regular))
-                        .foregroundStyle(.white)
+                        .foregroundStyle(isSelected ? .white : Color.white.opacity(0.90))
                     Text(description)
                         .font(.system(size: 10.5))
-                        .foregroundStyle(Color.white.opacity(0.55))
+                        .foregroundStyle(Color.white.opacity(0.75))
                 }
 
                 Spacer()
@@ -492,7 +483,7 @@ struct MenuBarPopover: View {
             } label: {
                 Image(systemName: showingSettings ? "gearshape.fill" : "gearshape")
                     .font(.system(size: 12))
-                    .foregroundStyle(showingSettings ? Color.accentColor : Color.white.opacity(0.55))
+                    .foregroundStyle(showingSettings ? Color.accentColor : Color.white.opacity(0.75))
             }
             .buttonStyle(.plain)
 
@@ -503,7 +494,7 @@ struct MenuBarPopover: View {
                     .font(.system(size: 9.5, weight: .medium))
                     .foregroundStyle(viewModel.availableUpdate != nil
                                      ? Color.green
-                                     : Color.white.opacity(0.38))
+                                     : Color.white.opacity(0.60))
             }
             .buttonStyle(.plain)
             .padding(.horizontal, 4)
@@ -511,7 +502,7 @@ struct MenuBarPopover: View {
             Button("Quit") { NSApplication.shared.terminate(nil) }
                 .buttonStyle(.plain)
                 .font(.system(size: 11, weight: .medium))
-                .foregroundStyle(Color.white.opacity(0.55))
+                .foregroundStyle(Color.white.opacity(0.75))
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 10)
