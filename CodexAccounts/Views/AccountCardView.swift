@@ -59,6 +59,22 @@ struct AccountCardView: View {
             RoundedRectangle(cornerRadius: 9)
                 .strokeBorder(borderColor, lineWidth: 0.5)
         )
+        .contextMenu {
+            Button(action: onTogglePin) {
+                Label(account.isPinned ? "Unpin" : "Pin to top",
+                      systemImage: account.isPinned ? "pin.slash" : "pin")
+            }
+            Button(action: onRefresh) {
+                Label("Refresh", systemImage: "arrow.clockwise")
+            }
+            Button(action: onReauth) {
+                Label("Re-authenticate", systemImage: "key")
+            }
+            Divider()
+            Button(role: .destructive, action: onRemove) {
+                Label("Remove Account", systemImage: "trash")
+            }
+        }
         .onHover { isHovering = $0 }
         .animation(.easeInOut(duration: 0.15), value: isHovering)
     }

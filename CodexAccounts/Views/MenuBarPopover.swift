@@ -111,6 +111,7 @@ struct MenuBarPopover: View {
                         )
                     }
                     .menuStyle(.borderlessButton)
+                    .menuIndicator(.hidden)
                     .fixedSize()
 
                     Button(action: {
@@ -374,12 +375,15 @@ struct MenuBarPopover: View {
                         Task { await viewModel.checkForUpdates(showUpToDateFeedback: true) }
                     } label: {
                         if viewModel.isCheckingForUpdates {
-                            ProgressView()
+                                .controlSize(.small)
                         } else {
                             Label("Check Now", systemImage: "arrow.clockwise")
                                 .font(.system(size: 11, weight: .semibold))
                         }
                     }
+                    .buttonStyle(.borderedProminent)
+                    .tint(Color.white.opacity(0.15))
+                    .foregroundStyle(.white
                     .buttonStyle(.bordered)
                     .controlSize(.small)
                     .disabled(viewModel.isCheckingForUpdates)
