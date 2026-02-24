@@ -12,6 +12,7 @@ struct UpdateInfo {
     let downloadURL: URL?
     let releaseNotes: String?
     let isRolling: Bool          // true for the "latest" CI build
+    let publishedAt: TimeInterval?  // Unix timestamp of the release
 }
 
 enum UpdateChecker {
@@ -42,7 +43,8 @@ enum UpdateChecker {
                     releaseURL: URL(string: newest.htmlURL) ?? releasesPage,
                     downloadURL: preferredDMGURL(in: newest),
                     releaseNotes: newest.body,
-                    isRolling: false
+                    isRolling: false,
+                    publishedAt: newest.publishedAt
                 )
             }
         }
@@ -66,7 +68,8 @@ enum UpdateChecker {
                     releaseURL: URL(string: latest.htmlURL) ?? releasesPage,
                     downloadURL: preferredDMGURL(in: latest),
                     releaseNotes: latest.body,
-                    isRolling: true
+                    isRolling: true,
+                    publishedAt: publishedAt
                 )
             }
         }
