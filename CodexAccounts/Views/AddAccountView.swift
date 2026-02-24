@@ -17,7 +17,7 @@ struct AddAccountView: View {
             // Icon
             ZStack {
                 Circle()
-                    .fill(.blue.opacity(0.1))
+                    .fill(.blue.opacity(0.12))
                     .frame(width: 56, height: 56)
                 Image(systemName: statusIcon)
                     .font(.system(size: 24, weight: .medium))
@@ -191,11 +191,11 @@ struct CommandBlock: View {
             .padding(.vertical, 8)
             .background(
                 RoundedRectangle(cornerRadius: 8)
-                    .fill(.black.opacity(0.15))
+                    .fill(.black.opacity(0.22))
             )
             .overlay(
                 RoundedRectangle(cornerRadius: 8)
-                    .strokeBorder(.separator.opacity(0.3), lineWidth: 0.5)
+                    .strokeBorder(.separator.opacity(0.4), lineWidth: 0.5)
             )
         }
         .buttonStyle(.plain)

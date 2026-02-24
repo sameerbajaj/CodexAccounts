@@ -69,7 +69,7 @@ struct AccountCardView: View {
         HStack(spacing: 6) {
             Text(account.email)
                 .font(.system(size: 12.5, weight: .semibold))
-                .foregroundStyle(.white)
+                .foregroundStyle(Color.white.opacity(0.95))
                 .lineLimit(1)
                 .truncationMode(.middle)
 
@@ -110,7 +110,7 @@ struct AccountCardView: View {
                     .fill(Color.white.opacity(isHovering ? 0.10 : 0))
                 Image(systemName: "ellipsis")
                     .font(.system(size: 10, weight: .semibold))
-                    .foregroundStyle(Color.white.opacity(0.6))
+                    .foregroundStyle(Color.white.opacity(0.55))
             }
             .frame(width: 24, height: 20)
         }
@@ -128,14 +128,14 @@ struct AccountCardView: View {
             GeometryReader { proxy in
                 ZStack(alignment: .leading) {
                     RoundedRectangle(cornerRadius: 4)
-                        .fill(Color.white.opacity(0.1))
+                        .fill(Color.white.opacity(0.12))
                     RoundedRectangle(cornerRadius: 4)
                         .fill(barGradient(for: usage.remainingPercent))
                         .frame(width: max(0, proxy.size.width * CGFloat(min(100, max(0, usage.remainingPercent)) / 100)))
                         .animation(.spring(duration: 0.5), value: usage.remainingPercent)
                 }
             }
-            .frame(height: 7)
+            .frame(height: 8)
 
             Text("\(Int(min(100, max(0, usage.remainingPercent))))%")
                 .font(.system(size: 14, weight: .bold, design: .monospaced))
@@ -153,7 +153,7 @@ struct AccountCardView: View {
                     Text("Resets \(resetAt.resetDescription)")
                         .font(.system(size: 10))
                 }
-                .foregroundStyle(Color.white.opacity(0.35))
+                .foregroundStyle(Color.white.opacity(0.42))
             }
 
             Spacer()
@@ -162,7 +162,7 @@ struct AccountCardView: View {
                 if let shortId = account.shortAccountId {
                     Text(shortId)
                         .font(.system(size: 9, design: .monospaced))
-                        .foregroundStyle(Color.white.opacity(0.2))
+                        .foregroundStyle(Color.white.opacity(0.28))
                         .help(account.accountId ?? "")
                 }
                 if case .refreshing = status {
@@ -170,7 +170,7 @@ struct AccountCardView: View {
                 } else {
                     Text("  \(usage.lastUpdated.relativeDescription)")
                         .font(.system(size: 9))
-                        .foregroundStyle(Color.white.opacity(0.2))
+                        .foregroundStyle(Color.white.opacity(0.28))
                 }
             }
         }
@@ -199,7 +199,7 @@ struct AccountCardView: View {
                 .foregroundStyle(.orange)
             Text("Session expired")
                 .font(.system(size: 11))
-                .foregroundStyle(Color.white.opacity(0.5))
+                .foregroundStyle(Color.white.opacity(0.55))
             Spacer()
             Button(action: onReauth) {
                 Text("Re-authenticate")
@@ -219,7 +219,7 @@ struct AccountCardView: View {
             ProgressView().controlSize(.small)
             Text("Loading...")
                 .font(.system(size: 11))
-                .foregroundStyle(Color.white.opacity(0.35))
+                .foregroundStyle(Color.white.opacity(0.45))
         }
         .padding(.top, 8)
     }
@@ -244,38 +244,38 @@ struct AccountCardView: View {
         Group {
             if account.isPinned {
                 Color(red: 1.0, green: 0.55, blue: 0.1)
-                    .opacity(isHovering ? 0.12 : 0.07)
+                    .opacity(isHovering ? 0.14 : 0.08)
             } else {
-                Color.white.opacity(isHovering ? 0.1 : 0.055)
+                Color.white.opacity(isHovering ? 0.10 : 0.065)
             }
         }
     }
 
     private var borderColor: Color {
-        if account.isPinned { return Color.orange.opacity(0.25) }
-        return Color.white.opacity(isHovering ? 0.14 : 0.07)
+        if account.isPinned { return Color.orange.opacity(0.28) }
+        return Color.white.opacity(isHovering ? 0.16 : 0.09)
     }
 
     private func barGradient(for remaining: Double) -> LinearGradient {
         if remaining > 40 {
             return LinearGradient(
-                colors: [Color(red: 0.2, green: 0.85, blue: 0.45), Color(red: 0.1, green: 0.72, blue: 0.35)],
+                colors: [Color(red: 0.22, green: 0.82, blue: 0.48), Color(red: 0.12, green: 0.70, blue: 0.38)],
                 startPoint: .leading, endPoint: .trailing)
         } else if remaining > 15 {
             return LinearGradient(
-                colors: [Color(red: 1.0, green: 0.65, blue: 0.1), Color(red: 1.0, green: 0.5, blue: 0.05)],
+                colors: [Color(red: 1.0, green: 0.68, blue: 0.15), Color(red: 1.0, green: 0.52, blue: 0.08)],
                 startPoint: .leading, endPoint: .trailing)
         } else {
             return LinearGradient(
-                colors: [Color(red: 1.0, green: 0.28, blue: 0.28), Color(red: 0.9, green: 0.18, blue: 0.18)],
+                colors: [Color(red: 1.0, green: 0.32, blue: 0.30), Color(red: 0.88, green: 0.20, blue: 0.20)],
                 startPoint: .leading, endPoint: .trailing)
         }
     }
 
     private func percentColor(for remaining: Double) -> Color {
-        if remaining > 40 { return Color(red: 0.2, green: 0.85, blue: 0.45) }
-        else if remaining > 15 { return Color(red: 1.0, green: 0.65, blue: 0.1) }
-        else { return Color(red: 1.0, green: 0.35, blue: 0.35) }
+        if remaining > 40 { return Color(red: 0.25, green: 0.85, blue: 0.50) }
+        else if remaining > 15 { return Color(red: 1.0, green: 0.68, blue: 0.15) }
+        else { return Color(red: 1.0, green: 0.38, blue: 0.38) }
     }
 }
 
@@ -309,17 +309,17 @@ struct PlanBadge: View {
     private var badgeGradient: LinearGradient {
         switch plan.lowercased() {
         case "pro":
-            return LinearGradient(colors: [Color(red: 0.58, green: 0.3, blue: 1.0), Color(red: 0.4, green: 0.2, blue: 0.85)], startPoint: .leading, endPoint: .trailing)
+            return LinearGradient(colors: [Color(red: 0.60, green: 0.32, blue: 1.0), Color(red: 0.42, green: 0.22, blue: 0.88)], startPoint: .leading, endPoint: .trailing)
         case "plus":
-            return LinearGradient(colors: [Color(red: 0.25, green: 0.5, blue: 1.0), Color(red: 0.1, green: 0.65, blue: 0.95)], startPoint: .leading, endPoint: .trailing)
+            return LinearGradient(colors: [Color(red: 0.28, green: 0.52, blue: 1.0), Color(red: 0.12, green: 0.68, blue: 0.96)], startPoint: .leading, endPoint: .trailing)
         case "go":
-            return LinearGradient(colors: [Color(red: 0.1, green: 0.72, blue: 0.65), Color(red: 0.05, green: 0.82, blue: 0.55)], startPoint: .leading, endPoint: .trailing)
+            return LinearGradient(colors: [Color(red: 0.12, green: 0.72, blue: 0.62), Color(red: 0.08, green: 0.80, blue: 0.52)], startPoint: .leading, endPoint: .trailing)
         case "team":
-            return LinearGradient(colors: [Color(red: 1.0, green: 0.55, blue: 0.1), Color(red: 1.0, green: 0.75, blue: 0.1)], startPoint: .leading, endPoint: .trailing)
+            return LinearGradient(colors: [Color(red: 1.0, green: 0.58, blue: 0.12), Color(red: 1.0, green: 0.72, blue: 0.12)], startPoint: .leading, endPoint: .trailing)
         case "enterprise":
-            return LinearGradient(colors: [Color(red: 1.0, green: 0.75, blue: 0.1), Color(red: 1.0, green: 0.55, blue: 0.1)], startPoint: .leading, endPoint: .trailing)
+            return LinearGradient(colors: [Color(red: 1.0, green: 0.72, blue: 0.12), Color(red: 1.0, green: 0.58, blue: 0.12)], startPoint: .leading, endPoint: .trailing)
         default:
-            return LinearGradient(colors: [Color(white: 0.4), Color(white: 0.32)], startPoint: .leading, endPoint: .trailing)
+            return LinearGradient(colors: [Color(white: 0.42), Color(white: 0.34)], startPoint: .leading, endPoint: .trailing)
         }
     }
 }

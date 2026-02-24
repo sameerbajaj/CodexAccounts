@@ -39,11 +39,11 @@ struct MenuBarPopover: View {
             }
 
             Divider()
-                .background(Color.white.opacity(0.08))
+                .background(Color.white.opacity(0.10))
             footer
         }
         .frame(width: 360)
-        .background(Color(red: 0.11, green: 0.11, blue: 0.13))
+        .background(Color(red: 0.098, green: 0.098, blue: 0.118))
         .preferredColorScheme(.dark)
         .animation(.easeInOut(duration: 0.2), value: viewModel.showingAddAccount)
         .animation(.easeInOut(duration: 0.2), value: viewModel.accounts.count)
@@ -102,7 +102,7 @@ struct MenuBarPopover: View {
                             Text(viewModel.sortMode.rawValue)
                                 .font(.system(size: 10, weight: .medium))
                         }
-                        .foregroundStyle(Color.white.opacity(0.5))
+                        .foregroundStyle(Color.white.opacity(0.55))
                         .padding(.horizontal, 8)
                         .padding(.vertical, 4)
                         .background(
@@ -118,7 +118,7 @@ struct MenuBarPopover: View {
                     }) {
                         Image(systemName: "arrow.clockwise")
                             .font(.system(size: 12, weight: .medium))
-                            .foregroundStyle(Color.white.opacity(0.45))
+                            .foregroundStyle(Color.white.opacity(0.5))
                             .rotationEffect(.degrees(viewModel.isRefreshing ? 360 : 0))
                             .animation(
                                 viewModel.isRefreshing
@@ -135,7 +135,7 @@ struct MenuBarPopover: View {
             .padding(.bottom, 12)
 
             if !viewModel.accounts.isEmpty {
-                Divider().background(Color.white.opacity(0.08))
+                Divider().background(Color.white.opacity(0.10))
             }
         }
     }
@@ -146,12 +146,12 @@ struct MenuBarPopover: View {
         VStack(spacing: 0) {
             if let update = viewModel.availableUpdate {
                 updateBanner(update)
-                Divider().background(Color.white.opacity(0.08))
+                Divider().background(Color.white.opacity(0.10))
             }
 
             if let email = viewModel.detectedUntrackedEmail {
                 detectedBanner(email: email)
-                Divider().background(Color.white.opacity(0.08))
+                Divider().background(Color.white.opacity(0.10))
             }
 
             VStack(spacing: 5) {
@@ -193,7 +193,7 @@ struct MenuBarPopover: View {
                             .foregroundStyle(.white)
                         Text("Installs automatically — no drag & drop")
                             .font(.system(size: 10))
-                            .foregroundStyle(Color.white.opacity(0.45))
+                            .foregroundStyle(Color.white.opacity(0.50))
                     }
                     Spacer()
                     if update.downloadURL != nil {
@@ -220,7 +220,7 @@ struct MenuBarPopover: View {
                     Button(action: { viewModel.dismissUpdate() }) {
                         Image(systemName: "xmark")
                             .font(.system(size: 8, weight: .bold))
-                            .foregroundStyle(Color.white.opacity(0.3))
+                            .foregroundStyle(Color.white.opacity(0.35))
                     }
                     .buttonStyle(.plain)
                 }
@@ -238,7 +238,7 @@ struct MenuBarPopover: View {
                     }
                     Text("\(Int(progress * 100))%")
                         .font(.system(size: 10, weight: .medium))
-                        .foregroundStyle(Color.white.opacity(0.45))
+                        .foregroundStyle(Color.white.opacity(0.55))
                         .frame(width: 32, alignment: .trailing)
                 }
 
@@ -262,7 +262,7 @@ struct MenuBarPopover: View {
                             .foregroundStyle(.white)
                         Text(message)
                             .font(.system(size: 10))
-                            .foregroundStyle(Color.white.opacity(0.45))
+                            .foregroundStyle(Color.white.opacity(0.50))
                             .lineLimit(2)
                     }
                     Spacer()
@@ -306,7 +306,7 @@ struct MenuBarPopover: View {
                     .font(.system(size: 8, weight: .bold))
             }
             .buttonStyle(.plain)
-            .foregroundStyle(Color.white.opacity(0.3))
+            .foregroundStyle(Color.white.opacity(0.35))
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 10)
@@ -329,7 +329,7 @@ struct MenuBarPopover: View {
                 }
             }
 
-            Divider().background(Color.white.opacity(0.07)).padding(.horizontal, 14)
+            Divider().background(Color.white.opacity(0.10)).padding(.horizontal, 14)
 
             settingsSection(title: "Auto-Refresh") {
                 ForEach(AccountsViewModel.RefreshInterval.allCases) { interval in
@@ -344,13 +344,13 @@ struct MenuBarPopover: View {
                 }
             }
 
-            Divider().background(Color.white.opacity(0.07)).padding(.horizontal, 14)
+            Divider().background(Color.white.opacity(0.10)).padding(.horizontal, 14)
 
             settingsSection(title: "Updates") {
                 HStack(alignment: .top, spacing: 10) {
                     Image(systemName: "arrow.triangle.2.circlepath.circle")
                         .font(.system(size: 13, weight: .medium))
-                        .foregroundStyle(Color.white.opacity(0.4))
+                        .foregroundStyle(Color.white.opacity(0.5))
                         .frame(width: 16)
                     VStack(alignment: .leading, spacing: 2) {
                         Text("Check automatically on launch")
@@ -358,7 +358,7 @@ struct MenuBarPopover: View {
                             .foregroundStyle(.white)
                         Text("Detect new versions / latest builds on startup")
                             .font(.system(size: 10.5))
-                            .foregroundStyle(Color.white.opacity(0.4))
+                            .foregroundStyle(Color.white.opacity(0.45))
                     }
                     Spacer()
                     Toggle("", isOn: $viewModel.autoCheckUpdatesOnLaunch)
@@ -389,7 +389,7 @@ struct MenuBarPopover: View {
                 if let message = viewModel.updateCheckMessage {
                     Text(message)
                         .font(.system(size: 10.5, weight: .medium))
-                        .foregroundStyle(Color.white.opacity(0.4))
+                        .foregroundStyle(Color.white.opacity(0.50))
                         .padding(.horizontal, 14)
                         .padding(.bottom, 10)
                 }
@@ -400,10 +400,10 @@ struct MenuBarPopover: View {
     private func settingsSection<Content: View>(title: String, @ViewBuilder content: () -> Content) -> some View {
         VStack(alignment: .leading, spacing: 4) {
             Text(title)
-                .font(.system(size: 9, weight: .semibold))
-                .foregroundStyle(Color.white.opacity(0.3))
+                .font(.system(size: 9, weight: .bold))
+                .foregroundStyle(Color.white.opacity(0.38))
                 .textCase(.uppercase)
-                .tracking(0.8)
+                .tracking(1.0)
                 .padding(.horizontal, 14)
                 .padding(.top, 12)
                 .padding(.bottom, 2)
@@ -434,7 +434,7 @@ struct MenuBarPopover: View {
 
                 Image(systemName: icon)
                     .font(.system(size: 11))
-                    .foregroundStyle(isSelected ? Color.accentColor : Color.white.opacity(0.4))
+                    .foregroundStyle(isSelected ? Color.accentColor : Color.white.opacity(0.5))
                     .frame(width: 16)
 
                 VStack(alignment: .leading, spacing: 1) {
@@ -443,7 +443,7 @@ struct MenuBarPopover: View {
                         .foregroundStyle(.white)
                     Text(description)
                         .font(.system(size: 10))
-                        .foregroundStyle(Color.white.opacity(0.38))
+                        .foregroundStyle(Color.white.opacity(0.45))
                 }
 
                 Spacer()
@@ -473,7 +473,7 @@ struct MenuBarPopover: View {
                 }
             }
             .buttonStyle(.plain)
-            .foregroundStyle(Color(red: 0.35, green: 0.6, blue: 1.0))
+            .foregroundStyle(Color(red: 0.38, green: 0.62, blue: 1.0))
 
             Spacer()
 
@@ -482,7 +482,7 @@ struct MenuBarPopover: View {
             } label: {
                 Image(systemName: showingSettings ? "gearshape.fill" : "gearshape")
                     .font(.system(size: 12))
-                    .foregroundStyle(showingSettings ? Color.accentColor : Color.white.opacity(0.35))
+                    .foregroundStyle(showingSettings ? Color.accentColor : Color.white.opacity(0.45))
             }
             .buttonStyle(.plain)
 
@@ -493,7 +493,7 @@ struct MenuBarPopover: View {
                     .font(.system(size: 9, weight: .medium))
                     .foregroundStyle(viewModel.availableUpdate != nil
                                      ? Color.green
-                                     : Color.white.opacity(0.2))
+                                     : Color.white.opacity(0.30))
             }
             .buttonStyle(.plain)
             .padding(.horizontal, 4)
@@ -501,7 +501,7 @@ struct MenuBarPopover: View {
             Button("Quit") { NSApplication.shared.terminate(nil) }
                 .buttonStyle(.plain)
                 .font(.system(size: 11))
-                .foregroundStyle(Color.white.opacity(0.35))
+                .foregroundStyle(Color.white.opacity(0.45))
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 10)

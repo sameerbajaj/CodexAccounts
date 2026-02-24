@@ -17,11 +17,11 @@ struct EmptyStateView: View {
             // Icon
             ZStack {
                 Circle()
-                    .fill(.blue.opacity(0.08))
+                    .fill(.blue.opacity(0.10))
                     .frame(width: 64, height: 64)
                 Image(systemName: "person.crop.circle.badge.plus")
                     .font(.system(size: 30))
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Color.white.opacity(0.50))
             }
 
             VStack(spacing: 6) {
