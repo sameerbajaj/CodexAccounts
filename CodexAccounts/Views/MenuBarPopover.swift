@@ -168,7 +168,11 @@ struct MenuBarPopover: View {
                         onRefresh: { Task { await viewModel.refreshAccount(account) } },
                         onRemove: { viewModel.removeAccount(account) },
                         onReauth: { viewModel.reauthAccount(account) },
-                        onTogglePin: { viewModel.togglePin(account) }
+                        onTogglePin: { viewModel.togglePin(account) },
+                        onTestMessage: { viewModel.sendTestMessage(account) },
+                        onDismissTestResult: { viewModel.dismissTestResult(account.id) },
+                        isTestingMessage: viewModel.testMessageLoading.contains(account.id),
+                        testResult: viewModel.testMessageResults[account.id]
                     )
                 }
             }

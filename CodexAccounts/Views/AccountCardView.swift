@@ -15,6 +15,10 @@ struct AccountCardView: View {
     let onRemove: () -> Void
     let onReauth: () -> Void
     let onTogglePin: () -> Void
+    let onTestMessage: () -> Void
+    let onDismissTestResult: () -> Void
+    let isTestingMessage: Bool
+    let testResult: TestMessageResult?
 
     @State private var isHovering = false
 
@@ -45,9 +49,19 @@ struct AccountCardView: View {
                 } else if let usage {
                     usageRows(usage)
                         .padding(.horizontal, 12)
-                        .padding(.bottom, 11)
+                        .padding(.bottom, isTestingMessage || testResult != nil ? 0 : 11)
                 } else {
                     loadingRow
+                        .padding(.horizontal, 12)
+                        .padding(.bottom, isTestingMessage || testResult != nil ? 0 : 11)
+                }
+
+                if isTestingMessage {
+                    testMessageLoadingRow
+                        .padding(.horizontal, 12)
+                        .padding(.bottom, 11)
+                } else if let result = testResult {
+                    testResultRow(result)
                         .padding(.horizontal, 12)
                         .padding(.bottom, 11)
                 }
@@ -64,6 +78,10 @@ struct AccountCardView: View {
                 Label(account.isPinned ? "Unpin" : "Pin to top",
                       systemImage: account.isPinned ? "pin.slash" : "pin")
             }
+            Button(action: onTestMessage) {
+                Label("Send test message", systemImage: "paperplane")
+            }
+            .disabled(isTestingMessage)
             Button(action: onRefresh) {
                 Label("Refresh", systemImage: "arrow.clockwise")
             }
@@ -110,6 +128,10 @@ struct AccountCardView: View {
                 Label(account.isPinned ? "Unpin" : "Pin to top",
                       systemImage: account.isPinned ? "pin.slash" : "pin")
             }
+            Button(action: onTestMessage) {
+                Label("Send test message", systemImage: "paperplane")
+            }
+            .disabled(isTestingMessage)
             Button(action: onRefresh) {
                 Label("Refresh", systemImage: "arrow.clockwise")
             }
@@ -239,6 +261,45 @@ struct AccountCardView: View {
                 .foregroundStyle(Color.white.opacity(0.75))
         }
         .padding(.top, 8)
+    }
+
+    // MARK: - Test Message Rows
+
+    private var testMessageLoadingRow: some View {
+        HStack(spacing: 6) {
+            ProgressView().controlSize(.small)
+            Text("Sending test message…")
+                .font(.system(size: 10))
+                .foregroundStyle(Color.white.opacity(0.75))
+        }
+        .padding(.top, 6)
+    }
+
+    private func testResultRow(_ result: TestMessageResult) -> some View {
+        HStack(alignment: .top, spacing: 5) {
+            Image(systemName: result.success ? "checkmark.circle.fill" : "xmark.circle.fill")
+                .font(.system(size: 10))
+                .foregroundStyle(result.success ? .green : .red)
+                .padding(.top, 1)
+            Text(result.message)
+                .font(.system(size: 9.5, design: .monospaced))
+                .foregroundStyle(result.success ? Color.green.opacity(0.85) : Color.red.opacity(0.85))
+                .lineLimit(4)
+                .textSelection(.enabled)
+            Spacer(minLength: 4)
+            Button(action: onDismissTestResult) {
+                Image(systemName: "xmark")
+                    .font(.system(size: 8, weight: .bold))
+                    .foregroundStyle(Color.white.opacity(0.50))
+            }
+            .buttonStyle(.plain)
+        }
+        .padding(6)
+        .background(
+            RoundedRectangle(cornerRadius: 6)
+                .fill((result.success ? Color.green : Color.red).opacity(0.10))
+        )
+        .padding(.top, 6)
     }
 
     // MARK: - Colors

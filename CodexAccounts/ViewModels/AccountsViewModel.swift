@@ -24,6 +24,8 @@ final class AccountsViewModel {
     var isCheckingForUpdates = false
     var updateCheckMessage: String? = nil
     var selfUpdateState: SelfUpdateState = .idle
+    var testMessageResults: [String: TestMessageResult] = [:]
+    var testMessageLoading: Set<String> = []
 
     // Stored so @Observable tracks changes and SwiftUI re-renders immediately
     var menuBarDisplayMode: MenuBarDisplayMode = .iconAndPercent {
@@ -482,5 +484,33 @@ final class AccountsViewModel {
         guard let idx = accounts.firstIndex(where: { $0.id == account.id }) else { return }
         accounts[idx].isPinned.toggle()
         AccountStore.save(accounts)
+    }
+
+    // MARK: - Test Message
+
+    func sendTestMessage(_ account: CodexAccount) {
+        guard !testMessageLoading.contains(account.id) else { return }
+        testMessageLoading.insert(account.id)
+        testMessageResults.removeValue(forKey: account.id)
+
+        Task {
+            let result = await TestMessageService.send(account: account)
+            await MainActor.run {
+                testMessageLoading.remove(account.id)
+                testMessageResults[account.id] = result
+            }
+
+            // Auto-dismiss after 8 seconds
+            try? await Task.sleep(for: .seconds(8))
+            await MainActor.run {
+                if testMessageResults[account.id]?.timestamp == result.timestamp {
+                    testMessageResults.removeValue(forKey: account.id)
+                }
+            }
+        }
+    }
+
+    func dismissTestResult(_ accountId: String) {
+        testMessageResults.removeValue(forKey: accountId)
     }
 }
