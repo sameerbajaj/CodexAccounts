@@ -72,29 +72,23 @@ private struct UsageBarsIcon: View {
     let litColor: Color
 
     var body: some View {
-        Canvas { context, size in
-            let barCount = 3
-            let spacing: CGFloat = 1.4
-            let totalSpacing = spacing * CGFloat(barCount - 1)
-            let barWidth = (size.width - totalSpacing) / CGFloat(barCount)
-
-            let heights: [CGFloat] = [
-                size.height * 0.42,
-                size.height * 0.68,
-                size.height * 1.0
-            ]
-
-            for index in 0..<barCount {
-                let x = CGFloat(index) * (barWidth + spacing)
-                let h = heights[index]
-                let y = size.height - h
-                let rect = CGRect(x: x, y: y, width: barWidth, height: h)
-                let path = Path(roundedRect: rect, cornerRadius: barWidth * 0.55)
-
-                let color = index < litBars ? litColor : Color.primary.opacity(0.22)
-                context.fill(path, with: .color(color))
+        HStack(alignment: .bottom, spacing: 1.4) {
+            ForEach(0..<3, id: \.self) { index in
+                RoundedRectangle(cornerRadius: 1.6)
+                    .fill(index < litBars ? litColor : Color.primary.opacity(0.22))
+                    .frame(width: 3.0, height: barHeight(for: index))
             }
         }
+        .frame(width: 12, height: 11, alignment: .bottomLeading)
+        .fixedSize()
         .accessibilityHidden(true)
+    }
+
+    private func barHeight(for index: Int) -> CGFloat {
+        switch index {
+        case 0: return 4.5
+        case 1: return 7.0
+        default: return 10.5
+        }
     }
 }
