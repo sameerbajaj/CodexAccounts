@@ -6,6 +6,7 @@
 //
 
 import SwiftUI
+import AppKit
 
 @main
 struct CodexAccountsApp: App {
@@ -55,8 +56,7 @@ struct MenuBarLabel: View {
     var body: some View {
         HStack(spacing: 3) {
             if showIcon {
-                UsageBarsIcon(litBars: litBars, litColor: statusColor)
-                    .frame(width: 12, height: 11)
+                Image(nsImage: makeBarsImage(litBars: litBars, litColor: statusColor))
             }
 
             if showPercent, let r = remaining {
@@ -64,31 +64,34 @@ struct MenuBarLabel: View {
                     .font(.system(size: 10, weight: .medium).monospacedDigit())
             }
         }
-        .frame(minWidth: 16, minHeight: 16)
     }
 }
 
-private struct UsageBarsIcon: View {
-    let litBars: Int
-    let litColor: Color
+/// Draw 3 ascending bars into an NSImage using CoreGraphics.
+/// NSImage (not SwiftUI shapes) is required because NSStatusBarButton doesn't
+/// give SwiftUI shape views a non-zero size when there is no accompanying Text —
+/// causing the icon-only mode to disappear entirely from the menu bar.
+private func makeBarsImage(litBars: Int, litColor: Color) -> NSImage {
+    let w: CGFloat = 14
+    let h: CGFloat = 12
+    let img = NSImage(size: NSSize(width: w, height: h), flipped: false) { _ in
+        let barW: CGFloat = 3.2
+        let spacing: CGFloat = 1.5
+        let heights: [CGFloat] = [4.5, 7.5, 11.0]
 
-    var body: some View {
-        HStack(alignment: .bottom, spacing: 1.4) {
-            ForEach(0..<3, id: \.self) { index in
-                RoundedRectangle(cornerRadius: 1.6)
-                    .fill(index < litBars ? litColor : Color.primary.opacity(0.22))
-                    .frame(width: 3.0, height: barHeight(for: index))
-            }
-        }
-        .frame(width: 12, height: 11, alignment: .bottomLeading)
-        .accessibilityHidden(true)
-    }
+        let litNS  = NSColor(litColor)
+        let dimNS  = NSColor.labelColor.withAlphaComponent(0.22)
 
-    private func barHeight(for index: Int) -> CGFloat {
-        switch index {
-        case 0: return 4.5
-        case 1: return 7.0
-        default: return 10.5
+        for i in 0..<3 {
+            let x = CGFloat(i) * (barW + spacing)
+            let bh = heights[i]
+            let barRect = NSRect(x: x, y: 0, width: barW, height: bh)
+            let path = NSBezierPath(roundedRect: barRect, xRadius: 1.5, yRadius: 1.5)
+            (i < litBars ? litNS : dimNS).setFill()
+            path.fill()
         }
+        return true
     }
+    img.isTemplate = false
+    return img
 }
