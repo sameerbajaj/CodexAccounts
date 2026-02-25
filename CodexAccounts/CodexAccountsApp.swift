@@ -64,6 +64,7 @@ struct MenuBarLabel: View {
                     .font(.system(size: 10, weight: .medium).monospacedDigit())
             }
         }
+        .frame(minWidth: 16, minHeight: 16)
     }
 }
 
@@ -80,7 +81,6 @@ private struct UsageBarsIcon: View {
             }
         }
         .frame(width: 12, height: 11, alignment: .bottomLeading)
-        .fixedSize()
         .accessibilityHidden(true)
     }
 
