@@ -98,11 +98,12 @@ struct MenuBarPopover: View {
                     } label: {
                         HStack(spacing: 3) {
                             Image(systemName: "arrow.up.arrow.down")
+                                .symbolRenderingMode(.monochrome)
+                                .foregroundColor(.white)
                                 .font(.system(size: 10, weight: .medium))
-                                .foregroundStyle(Color.white)
                             Text(viewModel.sortMode.rawValue)
+                                .foregroundColor(.white)
                                 .font(.system(size: 10, weight: .medium))
-                                .foregroundStyle(Color.white)
                         }
                         .padding(.horizontal, 8)
                         .padding(.vertical, 4)
@@ -113,6 +114,7 @@ struct MenuBarPopover: View {
                     }
                     .menuStyle(.borderlessButton)
                     .menuIndicator(.hidden)
+                    .environment(\.colorScheme, .dark)
                     .fixedSize()
 
                     Button(action: {
