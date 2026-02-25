@@ -102,7 +102,7 @@ struct MenuBarPopover: View {
                             Text(viewModel.sortMode.rawValue)
                                 .font(.system(size: 10, weight: .medium))
                         }
-                        .foregroundStyle(Color.white.opacity(0.80))
+                        .foregroundColor(Color.white.opacity(0.95))
                         .padding(.horizontal, 8)
                         .padding(.vertical, 4)
                         .background(
@@ -112,6 +112,7 @@ struct MenuBarPopover: View {
                     }
                     .menuStyle(.borderlessButton)
                     .menuIndicator(.hidden)
+                    .tint(Color.white.opacity(0.95))
                     .fixedSize()
 
                     Button(action: {

@@ -37,12 +37,11 @@ struct MenuBarLabel: View {
         return .red
     }
 
-    /// SF Symbol name — changes with usage level
-    private var iconName: String {
-        guard let r = remaining else { return "chart.bar.fill" }
-        if r > 66 { return "chart.bar.fill" }          // 3 bars
-        if r > 33 { return "chart.bar.xaxis" }           // 2 bars
-        return "chart.bar.xaxis"                          // 1 bar (dimmed)
+    private var litBars: Int {
+        guard let r = remaining else { return 3 }
+        if r >= 75 { return 3 }
+        if r >= 40 { return 2 }
+        return 1
     }
 
     private var showIcon: Bool {
@@ -56,10 +55,8 @@ struct MenuBarLabel: View {
     var body: some View {
         HStack(spacing: 3) {
             if showIcon {
-                Image(systemName: iconName)
-                    .font(.system(size: 11, weight: .medium))
-                    .symbolRenderingMode(.hierarchical)
-                    .foregroundStyle(statusColor)
+                UsageBarsIcon(litBars: litBars, litColor: statusColor)
+                    .frame(width: 12, height: 11)
             }
 
             if showPercent, let r = remaining {
@@ -67,5 +64,37 @@ struct MenuBarLabel: View {
                     .font(.system(size: 10, weight: .medium).monospacedDigit())
             }
         }
+    }
+}
+
+private struct UsageBarsIcon: View {
+    let litBars: Int
+    let litColor: Color
+
+    var body: some View {
+        Canvas { context, size in
+            let barCount = 3
+            let spacing: CGFloat = 1.4
+            let totalSpacing = spacing * CGFloat(barCount - 1)
+            let barWidth = (size.width - totalSpacing) / CGFloat(barCount)
+
+            let heights: [CGFloat] = [
+                size.height * 0.42,
+                size.height * 0.68,
+                size.height * 1.0
+            ]
+
+            for index in 0..<barCount {
+                let x = CGFloat(index) * (barWidth + spacing)
+                let h = heights[index]
+                let y = size.height - h
+                let rect = CGRect(x: x, y: y, width: barWidth, height: h)
+                let path = Path(roundedRect: rect, cornerRadius: barWidth * 0.55)
+
+                let color = index < litBars ? litColor : Color.primary.opacity(0.22)
+                context.fill(path, with: .color(color))
+            }
+        }
+        .accessibilityHidden(true)
     }
 }
