@@ -99,20 +99,20 @@ struct MenuBarPopover: View {
                         HStack(spacing: 3) {
                             Image(systemName: "arrow.up.arrow.down")
                                 .font(.system(size: 10, weight: .medium))
+                                .foregroundStyle(Color.white)
                             Text(viewModel.sortMode.rawValue)
                                 .font(.system(size: 10, weight: .medium))
+                                .foregroundStyle(Color.white)
                         }
-                        .foregroundColor(Color.white.opacity(0.95))
                         .padding(.horizontal, 8)
                         .padding(.vertical, 4)
                         .background(
                             RoundedRectangle(cornerRadius: 6)
-                                .fill(Color.white.opacity(0.15))
+                                .fill(Color.white.opacity(0.18))
                         )
                     }
                     .menuStyle(.borderlessButton)
                     .menuIndicator(.hidden)
-                    .tint(Color.white.opacity(0.95))
                     .fixedSize()
 
                     Button(action: {
