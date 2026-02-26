@@ -22,13 +22,63 @@ struct TestMessageResult: Equatable {
 }
 
 enum TestMessageService {
-    /// Same endpoint the Codex CLI hits internally.
-    private static let responsesURL = "https://api.openai.com/v1/responses"
+    /// Codex primarily uses Responses API, but ChatGPT OAuth tokens can also
+    /// require the chatgpt backend path depending on account/auth mode.
+    private static let primaryResponsesURL = "https://api.openai.com/v1/responses"
+    private static let fallbackResponsesURL = "https://chatgpt.com/backend-api/responses"
 
     /// Sends a minimal test prompt to `codex-mini-latest` using the account's
     /// OAuth Bearer token and returns the full model response or error text.
     static func send(account: CodexAccount) async -> TestMessageResult {
-        guard let url = URL(string: responsesURL) else {
+        let body: [String: Any] = [
+            "model": "codex-mini-latest",
+            "input": "Reply with exactly: OK",
+            "max_output_tokens": 16
+        ]
+
+        let payload: Data
+        do {
+            payload = try JSONSerialization.data(withJSONObject: body)
+        } catch {
+            return .fail("Failed to encode request")
+        }
+
+        let primary = await sendOnce(
+            urlString: primaryResponsesURL,
+            payload: payload,
+            account: account
+        )
+
+        if primary.success {
+            return primary
+        }
+
+        // If the primary path is rejected for permission/auth reasons, try the
+        // chatgpt backend route used by ChatGPT OAuth-backed flows.
+        if shouldTryFallback(for: primary.message) {
+            let fallback = await sendOnce(
+                urlString: fallbackResponsesURL,
+                payload: payload,
+                account: account
+            )
+            if fallback.success {
+                return fallback
+            }
+            // Return whichever error is more actionable.
+            if fallback.message.count > primary.message.count {
+                return fallback
+            }
+        }
+
+        return primary
+    }
+
+    private static func sendOnce(
+        urlString: String,
+        payload: Data,
+        account: CodexAccount
+    ) async -> TestMessageResult {
+        guard let url = URL(string: urlString) else {
             return .fail("Invalid API URL")
         }
 
@@ -37,19 +87,12 @@ enum TestMessageService {
         req.timeoutInterval = 30
         req.setValue("Bearer \(account.accessToken)", forHTTPHeaderField: "Authorization")
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        req.setValue("application/json", forHTTPHeaderField: "Accept")
         req.setValue("CodexAccounts/1.0", forHTTPHeaderField: "User-Agent")
-
-        let body: [String: Any] = [
-            "model": "codex-mini-latest",
-            "input": "Reply with exactly: OK",
-            "max_output_tokens": 16
-        ]
-
-        do {
-            req.httpBody = try JSONSerialization.data(withJSONObject: body)
-        } catch {
-            return .fail("Failed to encode request")
+        if let accountId = account.accountId, !accountId.isEmpty {
+            req.setValue(accountId, forHTTPHeaderField: "ChatGPT-Account-Id")
         }
+        req.httpBody = payload
 
         let data: Data
         let response: URLResponse
@@ -75,6 +118,17 @@ enum TestMessageService {
         // Extract the model's output text from the response
         let outputText = Self.extractOutputText(from: data) ?? bodyString.prefix(200).description
         return .ok(outputText)
+    }
+
+    private static func shouldTryFallback(for message: String) -> Bool {
+        let lower = message.lowercased()
+        return lower.contains("insufficient")
+            || lower.contains("permission")
+            || lower.contains("forbidden")
+            || lower.contains("not allowed")
+            || lower.contains("auth")
+            || lower.contains("401")
+            || lower.contains("403")
     }
 
     // MARK: - JSON Parsing Helpers
