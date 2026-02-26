@@ -27,14 +27,14 @@ enum TestMessageService {
     private static let fallbackResponsesURL = "https://chatgpt.com/backend-api/responses"
 
     static func send(account: CodexAccount) async -> TestMessageResult {
-        if let cliResult = await sendViaCLI(account: account) {
-            return cliResult
-        }
-
-        return await sendViaAPI(account: account)
+        await sendViaCLI(account: account)
     }
 
-    private static func sendViaCLI(account: CodexAccount) async -> TestMessageResult? {
+    private static func sendViaCLI(account: CodexAccount) async -> TestMessageResult {
+        guard let codexExecutable = resolveCodexExecutable() else {
+            return .fail("Codex CLI not found. Install Codex or add it to PATH.")
+        }
+
         let fm = FileManager.default
         let runRoot = fm.temporaryDirectory.appendingPathComponent("CodexAccounts-Test-\(UUID().uuidString)")
         let codexHome = runRoot.appendingPathComponent(".codex")
@@ -45,7 +45,7 @@ enum TestMessageService {
             try fm.createDirectory(at: codexHome, withIntermediateDirectories: true)
             try writeAuthFile(account: account, to: authURL)
         } catch {
-            return nil
+            return .fail("Failed to prepare CLI auth: \(error.localizedDescription)")
         }
 
         defer {
@@ -56,9 +56,9 @@ enum TestMessageService {
         let stdoutPipe = Pipe()
         let stderrPipe = Pipe()
 
-        process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
+        process.executableURL = URL(fileURLWithPath: codexExecutable)
         process.arguments = [
-            "codex", "exec",
+            "exec",
             "--skip-git-repo-check",
             "--ephemeral",
             "--sandbox", "read-only",
@@ -74,6 +74,7 @@ enum TestMessageService {
         env.removeValue(forKey: "OPENAI_ORG_ID")
         env.removeValue(forKey: "OPENAI_PROJECT_ID")
         env.removeValue(forKey: "OPENAI_BASE_URL")
+        env["PATH"] = "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
         process.environment = env
         process.standardOutput = stdoutPipe
         process.standardError = stderrPipe
@@ -81,7 +82,7 @@ enum TestMessageService {
         do {
             try process.run()
         } catch {
-            return nil
+            return .fail("Failed to launch Codex CLI: \(error.localizedDescription)")
         }
 
         let finished = await waitForProcess(process, timeout: cliTimeout)
@@ -105,6 +106,67 @@ enum TestMessageService {
 
         let errorText = pickErrorText(outputMessage: outputMessage, stderr: stderr, stdout: stdout)
         return .fail(errorText)
+    }
+
+    private static func resolveCodexExecutable() -> String? {
+        let env = ProcessInfo.processInfo.environment
+        let fm = FileManager.default
+
+        if let explicit = env["CODEX_BIN"], fm.isExecutableFile(atPath: explicit) {
+            return explicit
+        }
+
+        let directCandidates = [
+            "/opt/homebrew/bin/codex",
+            "/usr/local/bin/codex",
+            "/usr/bin/codex",
+        ]
+
+        for candidate in directCandidates where fm.isExecutableFile(atPath: candidate) {
+            return candidate
+        }
+
+        if let path = env["PATH"] {
+            for dir in path.split(separator: ":") {
+                let candidate = String(dir) + "/codex"
+                if fm.isExecutableFile(atPath: candidate) {
+                    return candidate
+                }
+            }
+        }
+
+        if let whichPath = runWhichCodex(), fm.isExecutableFile(atPath: whichPath) {
+            return whichPath
+        }
+
+        return nil
+    }
+
+    private static func runWhichCodex() -> String? {
+        let process = Process()
+        let out = Pipe()
+
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/which")
+        process.arguments = ["codex"]
+        process.environment = [
+            "PATH": "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin",
+        ]
+        process.standardOutput = out
+        process.standardError = FileHandle.nullDevice
+
+        do {
+            try process.run()
+            process.waitUntilExit()
+        } catch {
+            return nil
+        }
+
+        guard process.terminationStatus == 0 else { return nil }
+
+        let data = out.fileHandleForReading.readDataToEndOfFile()
+        let value = String(data: data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let value, !value.isEmpty else { return nil }
+        return value
     }
 
     private static func sendViaAPI(account: CodexAccount) async -> TestMessageResult {
