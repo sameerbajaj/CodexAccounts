@@ -22,14 +22,88 @@ struct TestMessageResult: Equatable {
 }
 
 enum TestMessageService {
-    /// Codex primarily uses Responses API, but ChatGPT OAuth tokens can also
-    /// require the chatgpt backend path depending on account/auth mode.
+    private static let cliTimeout: TimeInterval = 45
     private static let primaryResponsesURL = "https://api.openai.com/v1/responses"
     private static let fallbackResponsesURL = "https://chatgpt.com/backend-api/responses"
 
-    /// Sends a minimal test prompt to `codex-mini-latest` using the account's
-    /// OAuth Bearer token and returns the full model response or error text.
     static func send(account: CodexAccount) async -> TestMessageResult {
+        if let cliResult = await sendViaCLI(account: account) {
+            return cliResult
+        }
+
+        return await sendViaAPI(account: account)
+    }
+
+    private static func sendViaCLI(account: CodexAccount) async -> TestMessageResult? {
+        let fm = FileManager.default
+        let runRoot = fm.temporaryDirectory.appendingPathComponent("CodexAccounts-Test-\(UUID().uuidString)")
+        let codexHome = runRoot.appendingPathComponent(".codex")
+        let authURL = codexHome.appendingPathComponent("auth.json")
+        let outputURL = runRoot.appendingPathComponent("last-message.txt")
+
+        do {
+            try fm.createDirectory(at: codexHome, withIntermediateDirectories: true)
+            try writeAuthFile(account: account, to: authURL)
+        } catch {
+            return nil
+        }
+
+        defer {
+            try? fm.removeItem(at: runRoot)
+        }
+
+        let process = Process()
+        let stdoutPipe = Pipe()
+        let stderrPipe = Pipe()
+
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
+        process.arguments = [
+            "codex", "exec",
+            "--skip-git-repo-check",
+            "--ephemeral",
+            "--sandbox", "read-only",
+            "--color", "never",
+            "--output-last-message", outputURL.path,
+            "-C", runRoot.path,
+            "Reply with exactly: OK"
+        ]
+
+        var env = ProcessInfo.processInfo.environment
+        env["CODEX_HOME"] = codexHome.path
+        process.environment = env
+        process.standardOutput = stdoutPipe
+        process.standardError = stderrPipe
+
+        do {
+            try process.run()
+        } catch {
+            return nil
+        }
+
+        let finished = await waitForProcess(process, timeout: cliTimeout)
+        if !finished {
+            process.terminate()
+            return .fail("Codex CLI timed out")
+        }
+
+        let stdout = String(data: stdoutPipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
+        let stderr = String(data: stderrPipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
+        let outputMessage = (try? String(contentsOf: outputURL, encoding: .utf8))?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+
+        if process.terminationStatus == 0 {
+            let msg = !outputMessage.isEmpty
+                ? outputMessage
+                : (!stdout.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                    ? stdout.trimmingCharacters(in: .whitespacesAndNewlines)
+                    : "OK")
+            return .ok(msg)
+        }
+
+        let errorText = pickErrorText(outputMessage: outputMessage, stderr: stderr, stdout: stdout)
+        return .fail(errorText)
+    }
+
+    private static func sendViaAPI(account: CodexAccount) async -> TestMessageResult {
         let body: [String: Any] = [
             "model": "codex-mini-latest",
             "input": "Reply with exactly: OK",
@@ -71,6 +145,57 @@ enum TestMessageService {
         }
 
         return primary
+    }
+
+    private static func waitForProcess(_ process: Process, timeout: TimeInterval) async -> Bool {
+        await withCheckedContinuation { continuation in
+            let queue = DispatchQueue.global(qos: .userInitiated)
+            queue.async {
+                let deadline = Date().addingTimeInterval(timeout)
+                while process.isRunning && Date() < deadline {
+                    Thread.sleep(forTimeInterval: 0.1)
+                }
+                continuation.resume(returning: !process.isRunning)
+            }
+        }
+    }
+
+    private static func writeAuthFile(account: CodexAccount, to url: URL) throws {
+        var tokenMap: [String: Any] = [
+            "access_token": account.accessToken,
+            "refresh_token": account.refreshToken,
+        ]
+        if let idToken = account.idToken, !idToken.isEmpty {
+            tokenMap["id_token"] = idToken
+        }
+        if let accountId = account.accountId, !accountId.isEmpty {
+            tokenMap["account_id"] = accountId
+        }
+
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+
+        let authMap: [String: Any] = [
+            "auth_mode": "chatgpt",
+            "tokens": tokenMap,
+            "last_refresh": formatter.string(from: account.lastTokenRefresh ?? Date()),
+        ]
+
+        let data = try JSONSerialization.data(withJSONObject: authMap)
+        try data.write(to: url, options: .atomic)
+    }
+
+    private static func pickErrorText(outputMessage: String, stderr: String, stdout: String) -> String {
+        let cleanedOutput = outputMessage.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !cleanedOutput.isEmpty { return cleanedOutput }
+
+        let cleanedStderr = stderr.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !cleanedStderr.isEmpty { return cleanedStderr }
+
+        let cleanedStdout = stdout.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !cleanedStdout.isEmpty { return cleanedStdout }
+
+        return "Codex CLI failed"
     }
 
     private static func sendOnce(
