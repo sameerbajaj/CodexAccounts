@@ -70,6 +70,10 @@ enum TestMessageService {
 
         var env = ProcessInfo.processInfo.environment
         env["CODEX_HOME"] = codexHome.path
+        env.removeValue(forKey: "OPENAI_API_KEY")
+        env.removeValue(forKey: "OPENAI_ORG_ID")
+        env.removeValue(forKey: "OPENAI_PROJECT_ID")
+        env.removeValue(forKey: "OPENAI_BASE_URL")
         process.environment = env
         process.standardOutput = stdoutPipe
         process.standardError = stderrPipe
