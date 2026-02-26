@@ -104,7 +104,12 @@ enum TestMessageService {
             return .ok(msg)
         }
 
-        let errorText = pickErrorText(outputMessage: outputMessage, stderr: stderr, stdout: stdout)
+        let errorText = pickErrorText(
+            outputMessage: outputMessage,
+            stderr: stderr,
+            stdout: stdout,
+            exitCode: Int(process.terminationStatus)
+        )
         return .fail(errorText)
     }
 
@@ -251,9 +256,22 @@ enum TestMessageService {
         try data.write(to: url, options: .atomic)
     }
 
-    private static func pickErrorText(outputMessage: String, stderr: String, stdout: String) -> String {
+    private static func pickErrorText(
+        outputMessage: String,
+        stderr: String,
+        stdout: String,
+        exitCode: Int
+    ) -> String {
         let cleanedOutput = outputMessage.trimmingCharacters(in: .whitespacesAndNewlines)
         if !cleanedOutput.isEmpty { return cleanedOutput }
+
+        if let fromStderr = extractMeaningfulCodexText(stderr) {
+            return fromStderr
+        }
+
+        if let fromStdout = extractMeaningfulCodexText(stdout) {
+            return fromStdout
+        }
 
         let cleanedStderr = stderr.trimmingCharacters(in: .whitespacesAndNewlines)
         if !cleanedStderr.isEmpty { return cleanedStderr }
@@ -261,7 +279,68 @@ enum TestMessageService {
         let cleanedStdout = stdout.trimmingCharacters(in: .whitespacesAndNewlines)
         if !cleanedStdout.isEmpty { return cleanedStdout }
 
-        return "Codex CLI failed"
+        return "Codex CLI failed (exit \(exitCode))"
+    }
+
+    private static func extractMeaningfulCodexText(_ text: String) -> String? {
+        let lines = text
+            .split(separator: "\n")
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+
+        guard !lines.isEmpty else { return nil }
+
+        let priorityNeedles = [
+            "usage limit",
+            "insufficient permissions",
+            "missing scopes",
+            "not logged in",
+            "unauthorized",
+            "forbidden",
+            "rate limit",
+            "credits",
+            "token expired",
+            "refresh token",
+            "api error",
+            "http ",
+            "failed",
+            "error",
+        ]
+
+        if let priority = lines.first(where: { line in
+            let lower = line.lowercased()
+            return priorityNeedles.contains(where: lower.contains)
+        }) {
+            return priority
+        }
+
+        let boilerplatePrefixes = [
+            "OpenAI Codex v",
+            "--------",
+            "workdir:",
+            "model:",
+            "provider:",
+            "approval:",
+            "sandbox:",
+            "reasoning effort:",
+            "reasoning summaries:",
+            "session id:",
+            "user",
+            "mcp startup:",
+            "thinking",
+            "codex",
+            "tokens used",
+        ]
+
+        let nonBoilerplate = lines.filter { line in
+            !boilerplatePrefixes.contains { prefix in line.hasPrefix(prefix) }
+        }
+
+        if let best = nonBoilerplate.last {
+            return best
+        }
+
+        return nil
     }
 
     private static func sendOnce(
