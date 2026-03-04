@@ -65,7 +65,10 @@ final class AccountsViewModel {
 
     private var hasSetup = false
     private var refreshTimer: Timer?
+    private var tokenKeepAliveTimer: Timer?
     private let fileWatcher = AuthFileWatcher()
+    private let tokenKeepAliveCheckInterval: TimeInterval = 600
+    private let tokenRefreshMaxAge: TimeInterval = 45 * 60
 
     // MARK: - Init
 
@@ -82,6 +85,11 @@ final class AccountsViewModel {
         if UserDefaults.standard.object(forKey: "autoCheckUpdatesOnLaunch") != nil {
             autoCheckUpdatesOnLaunch = UserDefaults.standard.bool(forKey: "autoCheckUpdatesOnLaunch")
         }
+    }
+
+    deinit {
+        refreshTimer?.invalidate()
+        tokenKeepAliveTimer?.invalidate()
     }
 
     // MARK: - Computed
@@ -232,8 +240,8 @@ final class AccountsViewModel {
             Task { await checkForUpdates(showUpToDateFeedback: false) }
         }
 
-        // Start auto-refresh timer
         startAutoRefresh()
+        startTokenKeepAlive()
     }
 
     // MARK: - Refresh
@@ -369,6 +377,44 @@ final class AccountsViewModel {
                 } else {
                     await self.refreshAll()
                 }
+            }
+        }
+    }
+
+    private func startTokenKeepAlive() {
+        tokenKeepAliveTimer?.invalidate()
+        tokenKeepAliveTimer = Timer.scheduledTimer(withTimeInterval: tokenKeepAliveCheckInterval, repeats: true) {
+            [weak self] _ in
+            guard let self else { return }
+            Task {
+                await self.refreshStaleTokens()
+            }
+        }
+
+        Task {
+            await refreshStaleTokens()
+        }
+    }
+
+    private func refreshStaleTokens() async {
+        guard !accounts.isEmpty else { return }
+
+        for account in accounts {
+            do {
+                guard let refreshed = try await CodexAPIService.refreshTokenIfNeeded(
+                    for: account,
+                    maxTokenAge: tokenRefreshMaxAge
+                ) else {
+                    continue
+                }
+
+                if let idx = accounts.firstIndex(where: { $0.id == account.id }) {
+                    accounts[idx] = refreshed
+                    accountStatuses[account.id] = .active
+                    AccountStore.save(accounts)
+                }
+            } catch {
+                continue
             }
         }
     }

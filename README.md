@@ -8,7 +8,7 @@ The Codex CLI has two rate limits: a rolling 5-hour window and a weekly window. 
 
 Codex Accounts shows the lowest remaining percentage across all your accounts directly in the menu bar. Click the icon to open a popover with a card for each account. Each card has both usage meters with time-to-reset countdowns, credit balance if your plan has one, and the plan type.
 
-The app watches `~/.codex/auth.json`. When you run `codex auth` to switch accounts, it picks up the new account automatically. Tokens refresh in the background before they expire.
+The app watches `~/.codex/auth.json`. When you run `codex auth` to switch accounts, it picks up the new account automatically. Tokens are refreshed proactively in the background and again on-demand if a request returns unauthorized.
 
 ## Requirements
 

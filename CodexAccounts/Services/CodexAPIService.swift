@@ -12,6 +12,19 @@ enum CodexAPIService {
     private static let refreshEndpoint = "https://auth.openai.com/oauth/token"
     private static let clientID = "app_EMoamEEZ73f0CkXaXp7hrann"
 
+    static func refreshTokenIfNeeded(
+        for account: CodexAccount,
+        maxTokenAge: TimeInterval,
+        now: Date = Date()
+    ) async throws -> CodexAccount? {
+        let baseline = account.lastTokenRefresh ?? account.addedAt
+        guard now.timeIntervalSince(baseline) >= maxTokenAge else {
+            return nil
+        }
+
+        return try await refreshToken(for: account)
+    }
+
     // MARK: - Errors
 
     enum APIError: LocalizedError, Equatable {
