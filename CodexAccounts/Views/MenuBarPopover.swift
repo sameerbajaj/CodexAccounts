@@ -11,6 +11,7 @@ import AppKit
 struct MenuBarPopover: View {
     @Bindable var viewModel: AccountsViewModel
     @State private var showingSettings = false
+    @State private var refreshIconAngle: Double = 0
 
     var body: some View {
         VStack(spacing: 0) {
@@ -124,15 +125,32 @@ struct MenuBarPopover: View {
                         Image(systemName: "arrow.clockwise")
                             .font(.system(size: 12, weight: .medium))
                             .foregroundStyle(Color.white.opacity(0.80))
-                            .rotationEffect(.degrees(viewModel.isRefreshing ? 360 : 0))
-                            .animation(
-                                viewModel.isRefreshing
-                                    ? .linear(duration: 1).repeatForever(autoreverses: false)
-                                    : .default,
-                                value: viewModel.isRefreshing
-                            )
+                            .frame(width: 14, height: 14, alignment: .center)
+                            .rotationEffect(.degrees(refreshIconAngle))
                     }
                     .buttonStyle(.plain)
+                    .frame(width: 18, height: 18, alignment: .center)
+                    .contentShape(Rectangle())
+                    .onChange(of: viewModel.isRefreshing) { _, isRefreshing in
+                        if isRefreshing {
+                            refreshIconAngle = 0
+                            withAnimation(.linear(duration: 1).repeatForever(autoreverses: false)) {
+                                refreshIconAngle = 360
+                            }
+                        } else {
+                            withAnimation(.none) {
+                                refreshIconAngle = 0
+                            }
+                        }
+                    }
+                    .onAppear {
+                        if viewModel.isRefreshing {
+                            refreshIconAngle = 0
+                            withAnimation(.linear(duration: 1).repeatForever(autoreverses: false)) {
+                                refreshIconAngle = 360
+                            }
+                        }
+                    }
                 }
             }
             .padding(.horizontal, 16)
