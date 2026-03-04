@@ -28,6 +28,7 @@ struct AddAccountView: View {
 
             Text(statusTitle)
                 .font(.system(size: 14, weight: .semibold))
+                .foregroundStyle(.white)
 
             // Content based on status
             Group {
@@ -47,7 +48,7 @@ struct AddAccountView: View {
             if status != .detected("") {
                 Button("Cancel", action: onCancel)
                     .buttonStyle(.plain)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Color.white.opacity(0.75))
                     .font(.system(size: 12))
                     .padding(.bottom, 4)
             }
@@ -63,7 +64,7 @@ struct AddAccountView: View {
         VStack(spacing: 12) {
             Text("Run the following in your terminal:")
                 .font(.system(size: 11))
-                .foregroundStyle(.secondary)
+                .foregroundStyle(Color.white.opacity(0.80))
                 .multilineTextAlignment(.center)
 
             VStack(spacing: 6) {
@@ -71,13 +72,13 @@ struct AddAccountView: View {
                     CommandBlock(command: "codex logout", description: "Sign out current account")
                     HStack {
                         Rectangle()
-                            .fill(.quaternary)
+                            .fill(Color.white.opacity(0.25))
                             .frame(width: 24, height: 1)
                         Text("then")
                             .font(.system(size: 10))
-                            .foregroundStyle(.quaternary)
+                            .foregroundStyle(Color.white.opacity(0.45))
                         Rectangle()
-                            .fill(.quaternary)
+                            .fill(Color.white.opacity(0.25))
                             .frame(width: 24, height: 1)
                     }
                 }
@@ -90,7 +91,7 @@ struct AddAccountView: View {
                         .controlSize(.small)
                     Text("Waiting for authentication...")
                         .font(.system(size: 11))
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(Color.white.opacity(0.80))
                 }
                 .padding(.top, 4)
             }
@@ -112,7 +113,7 @@ struct AddAccountView: View {
 
             Text(email)
                 .font(.system(size: 12, weight: .medium, design: .monospaced))
-                .foregroundStyle(.secondary)
+                .foregroundStyle(Color.white.opacity(0.90))
                 .padding(.horizontal, 12)
                 .padding(.vertical, 4)
                 .background(
@@ -131,7 +132,7 @@ struct AddAccountView: View {
                 .foregroundStyle(.red)
             Text(message)
                 .font(.system(size: 12))
-                .foregroundStyle(.secondary)
+                .foregroundStyle(Color.white.opacity(0.80))
                 .multilineTextAlignment(.center)
         }
     }
@@ -177,13 +178,13 @@ struct CommandBlock: View {
                 Text("$")
                     .foregroundStyle(.green.opacity(0.6))
                 Text(command)
-                    .foregroundStyle(.primary)
+                    .foregroundStyle(.white)
 
                 Spacer()
 
                 Image(systemName: copied ? "checkmark" : "doc.on.doc")
                     .font(.system(size: 9))
-                    .foregroundStyle(copied ? Color.green : Color.secondary)
+                    .foregroundStyle(copied ? Color.green : Color.white.opacity(0.65))
                     .animation(.easeInOut, value: copied)
             }
             .font(.system(size: 12, weight: .medium, design: .monospaced))
@@ -191,7 +192,7 @@ struct CommandBlock: View {
             .padding(.vertical, 8)
             .background(
                 RoundedRectangle(cornerRadius: 8)
-                    .fill(.black.opacity(0.22))
+                    .fill(Color.white.opacity(0.08))
             )
             .overlay(
                 RoundedRectangle(cornerRadius: 8)

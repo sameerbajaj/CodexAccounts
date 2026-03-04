@@ -44,6 +44,7 @@ struct MenuBarPopover: View {
         }
         .frame(width: 360)
         .background(Color(red: 0.14, green: 0.14, blue: 0.16))
+        .environment(\.colorScheme, .dark)
         .preferredColorScheme(.dark)
         .animation(.easeInOut(duration: 0.2), value: viewModel.showingAddAccount)
         .animation(.easeInOut(duration: 0.2), value: viewModel.accounts.count)
