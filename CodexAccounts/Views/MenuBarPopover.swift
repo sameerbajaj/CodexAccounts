@@ -11,7 +11,6 @@ import AppKit
 struct MenuBarPopover: View {
     @Bindable var viewModel: AccountsViewModel
     @State private var showingSettings = false
-    @State private var refreshIconAngle: Double = 0
 
     var body: some View {
         VStack(spacing: 0) {
@@ -122,35 +121,24 @@ struct MenuBarPopover: View {
                     Button(action: {
                         Task { await viewModel.refreshAll() }
                     }) {
-                        Image(systemName: "arrow.clockwise")
-                            .font(.system(size: 12, weight: .medium))
-                            .foregroundStyle(Color.white.opacity(0.80))
-                            .frame(width: 14, height: 14, alignment: .center)
-                            .rotationEffect(.degrees(refreshIconAngle))
+                        ZStack {
+                            Image(systemName: "arrow.clockwise")
+                                .font(.system(size: 12, weight: .medium))
+                                .foregroundStyle(Color.white.opacity(0.80))
+                                .opacity(viewModel.isRefreshing ? 0 : 1)
+
+                            if viewModel.isRefreshing {
+                                ProgressView()
+                                    .controlSize(.mini)
+                                    .tint(Color.white.opacity(0.80))
+                            }
+                        }
+                        .frame(width: 14, height: 14, alignment: .center)
                     }
                     .buttonStyle(.plain)
                     .frame(width: 18, height: 18, alignment: .center)
                     .contentShape(Rectangle())
-                    .onChange(of: viewModel.isRefreshing) { _, isRefreshing in
-                        if isRefreshing {
-                            refreshIconAngle = 0
-                            withAnimation(.linear(duration: 1).repeatForever(autoreverses: false)) {
-                                refreshIconAngle = 360
-                            }
-                        } else {
-                            withAnimation(.none) {
-                                refreshIconAngle = 0
-                            }
-                        }
-                    }
-                    .onAppear {
-                        if viewModel.isRefreshing {
-                            refreshIconAngle = 0
-                            withAnimation(.linear(duration: 1).repeatForever(autoreverses: false)) {
-                                refreshIconAngle = 360
-                            }
-                        }
-                    }
+                    .disabled(viewModel.isRefreshing)
                 }
             }
             .padding(.horizontal, 16)
