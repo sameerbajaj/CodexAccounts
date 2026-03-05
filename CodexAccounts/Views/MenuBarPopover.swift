@@ -89,12 +89,6 @@ struct MenuBarPopover: View {
                             } label: {
                                 Label(mode.rawValue, systemImage: mode.icon)
                             }
-                            .overlay(
-                                viewModel.sortMode == mode
-                                    ? Image(systemName: "checkmark").padding(.trailing, 4)
-                                    : nil,
-                                alignment: .trailing
-                            )
                         }
                     } label: {
                         HStack(spacing: 3) {
