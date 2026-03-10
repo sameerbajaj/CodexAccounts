@@ -12,37 +12,48 @@ struct MenuBarPopover: View {
     @Bindable var viewModel: AccountsViewModel
     @State private var showingSettings = false
 
+    private var popoverMaxHeight: CGFloat {
+        let visibleHeight = NSScreen.main?.visibleFrame.height ?? 900
+        return min(max(visibleHeight - 150, 460), 700)
+    }
+
     var body: some View {
         VStack(spacing: 0) {
             header
 
-            if viewModel.showingAddAccount {
-                AddAccountView(
-                    status: viewModel.addAccountStatus,
-                    hasExistingAccounts: !viewModel.accounts.isEmpty,
-                    onCancel: { viewModel.cancelAdding() }
-                )
-                .transition(.opacity.combined(with: .move(edge: .bottom)))
-            } else if viewModel.accounts.isEmpty {
-                EmptyStateView(onAddAccount: { viewModel.startAddingAccount() })
-                    .transition(.opacity)
-            } else {
-                mainContent
-                    .transition(.opacity)
-            }
+            ScrollView(.vertical, showsIndicators: true) {
+                VStack(spacing: 0) {
+                    if showingSettings {
+                        settingsPanel
+                            .padding(.horizontal, 10)
+                            .padding(.top, 10)
+                            .transition(.opacity.combined(with: .move(edge: .top)))
+                    }
 
-            if showingSettings {
-                Divider()
-                    .background(Color.white.opacity(0.12))
-                settingsPanel
-                    .transition(.opacity.combined(with: .move(edge: .bottom)))
+                    if viewModel.showingAddAccount {
+                        AddAccountView(
+                            status: viewModel.addAccountStatus,
+                            hasExistingAccounts: !viewModel.accounts.isEmpty,
+                            onCancel: { viewModel.cancelAdding() }
+                        )
+                        .transition(.opacity.combined(with: .move(edge: .bottom)))
+                    } else if viewModel.accounts.isEmpty {
+                        EmptyStateView(onAddAccount: { viewModel.startAddingAccount() })
+                            .transition(.opacity)
+                    } else {
+                        mainContent
+                            .transition(.opacity)
+                    }
+                }
             }
+            .frame(maxHeight: .infinity)
 
             Divider()
                 .background(Color.white.opacity(0.12))
             footer
         }
         .frame(width: 360)
+        .frame(maxHeight: popoverMaxHeight)
         .background(Color(red: 0.14, green: 0.14, blue: 0.16))
         .environment(\.colorScheme, .dark)
         .preferredColorScheme(.dark)
@@ -112,6 +123,8 @@ struct MenuBarPopover: View {
                     .environment(\.colorScheme, .dark)
                     .fixedSize()
 
+                    topSettingsButton
+
                     Button(action: {
                         Task { await viewModel.refreshAll() }
                     }) {
@@ -133,6 +146,8 @@ struct MenuBarPopover: View {
                     .frame(width: 18, height: 18, alignment: .center)
                     .contentShape(Rectangle())
                     .disabled(viewModel.isRefreshing)
+                } else {
+                    topSettingsButton
                 }
             }
             .padding(.horizontal, 16)
@@ -140,10 +155,30 @@ struct MenuBarPopover: View {
             .padding(.bottom, 12)
             .background(Color.white.opacity(0.02))
 
-            if !viewModel.accounts.isEmpty {
-                Divider().background(Color.white.opacity(0.12))
-            }
+            Divider().background(Color.white.opacity(0.12))
         }
+    }
+
+    private var topSettingsButton: some View {
+        Button {
+            showingSettings.toggle()
+        } label: {
+            HStack(spacing: 4) {
+                Image(systemName: showingSettings ? "chevron.up.circle.fill" : "gearshape.fill")
+                    .font(.system(size: 10.5, weight: .semibold))
+                Text(showingSettings ? "Hide" : "Settings")
+                    .font(.system(size: 10, weight: .medium))
+            }
+            .foregroundStyle(showingSettings ? Color.accentColor : Color.white.opacity(0.82))
+            .padding(.horizontal, 8)
+            .padding(.vertical, 4)
+            .background(
+                RoundedRectangle(cornerRadius: 6)
+                    .fill(showingSettings ? Color.accentColor.opacity(0.16) : Color.white.opacity(0.08))
+            )
+        }
+        .buttonStyle(.plain)
+        .help(showingSettings ? "Collapse settings" : "Show settings")
     }
 
     // MARK: - Main Content
@@ -326,6 +361,38 @@ struct MenuBarPopover: View {
 
     private var settingsPanel: some View {
         VStack(alignment: .leading, spacing: 0) {
+            HStack(spacing: 10) {
+                Label("Settings", systemImage: "gearshape.fill")
+                    .font(.system(size: 12.5, weight: .semibold))
+                    .foregroundStyle(.white)
+
+                Spacer()
+
+                Button {
+                    showingSettings = false
+                } label: {
+                    HStack(spacing: 4) {
+                        Text("Collapse")
+                            .font(.system(size: 10.5, weight: .medium))
+                        Image(systemName: "chevron.up")
+                            .font(.system(size: 9, weight: .bold))
+                    }
+                    .foregroundStyle(Color.white.opacity(0.82))
+                    .padding(.horizontal, 9)
+                    .padding(.vertical, 5)
+                    .background(
+                        Capsule()
+                            .fill(Color.white.opacity(0.10))
+                    )
+                }
+                .buttonStyle(.plain)
+            }
+            .padding(.horizontal, 14)
+            .padding(.top, 12)
+            .padding(.bottom, 8)
+
+            Divider().background(Color.white.opacity(0.12)).padding(.horizontal, 14)
+
             settingsSection(title: "Menu Bar Shows") {
                 ForEach(AccountsViewModel.MenuBarDisplayMode.allCases) { mode in
                     settingsRow(
@@ -408,6 +475,15 @@ struct MenuBarPopover: View {
                 }
             }
         }
+        .padding(.bottom, 8)
+        .background(
+            RoundedRectangle(cornerRadius: 16)
+                .fill(Color.white.opacity(0.04))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 16)
+                .stroke(Color.white.opacity(0.08), lineWidth: 1)
+        )
     }
 
     private func settingsSection<Content: View>(title: String, @ViewBuilder content: () -> Content) -> some View {
