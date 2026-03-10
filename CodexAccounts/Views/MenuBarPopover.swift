@@ -12,48 +12,37 @@ struct MenuBarPopover: View {
     @Bindable var viewModel: AccountsViewModel
     @State private var showingSettings = false
 
-    private var popoverMaxHeight: CGFloat {
-        let visibleHeight = NSScreen.main?.visibleFrame.height ?? 900
-        return min(max(visibleHeight - 150, 460), 700)
-    }
-
     var body: some View {
         VStack(spacing: 0) {
             header
 
-            ScrollView(.vertical, showsIndicators: true) {
-                VStack(spacing: 0) {
-                    if showingSettings {
-                        settingsPanel
-                            .padding(.horizontal, 10)
-                            .padding(.top, 10)
-                            .transition(.opacity.combined(with: .move(edge: .top)))
-                    }
-
-                    if viewModel.showingAddAccount {
-                        AddAccountView(
-                            status: viewModel.addAccountStatus,
-                            hasExistingAccounts: !viewModel.accounts.isEmpty,
-                            onCancel: { viewModel.cancelAdding() }
-                        )
-                        .transition(.opacity.combined(with: .move(edge: .bottom)))
-                    } else if viewModel.accounts.isEmpty {
-                        EmptyStateView(onAddAccount: { viewModel.startAddingAccount() })
-                            .transition(.opacity)
-                    } else {
-                        mainContent
-                            .transition(.opacity)
-                    }
-                }
+            if showingSettings {
+                settingsPanel
+                    .padding(.horizontal, 10)
+                    .padding(.top, 10)
+                    .transition(.opacity.combined(with: .move(edge: .top)))
             }
-            .frame(maxHeight: .infinity)
+
+            if viewModel.showingAddAccount {
+                AddAccountView(
+                    status: viewModel.addAccountStatus,
+                    hasExistingAccounts: !viewModel.accounts.isEmpty,
+                    onCancel: { viewModel.cancelAdding() }
+                )
+                .transition(.opacity.combined(with: .move(edge: .bottom)))
+            } else if viewModel.accounts.isEmpty {
+                EmptyStateView(onAddAccount: { viewModel.startAddingAccount() })
+                    .transition(.opacity)
+            } else {
+                mainContent
+                    .transition(.opacity)
+            }
 
             Divider()
                 .background(Color.white.opacity(0.12))
             footer
         }
         .frame(width: 360)
-        .frame(maxHeight: popoverMaxHeight)
         .background(Color(red: 0.14, green: 0.14, blue: 0.16))
         .environment(\.colorScheme, .dark)
         .preferredColorScheme(.dark)
