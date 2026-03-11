@@ -20,7 +20,11 @@ final class AccountsViewModel {
     var addAccountStatus: AddAccountStatus = .idle
     var detectedUntrackedEmail: String? = nil
     var sortMode: SortMode = .pinned {
-        didSet { UserDefaults.standard.set(sortMode.rawValue, forKey: "sortMode") }
+        didSet {
+            UserDefaults.standard.set(sortMode.rawValue, forKey: "sortMode")
+            // Apply new sort immediately even if a refresh is currently in-flight.
+            frozenAccountOrder = nil
+        }
     }
     var availableUpdate: UpdateInfo? = nil
     var isCheckingForUpdates = false
@@ -274,13 +278,8 @@ final class AccountsViewModel {
         isRefreshing = true
         defer { isRefreshing = false }
 
-        await withTaskGroup(of: Void.self) { group in
-            for account in accounts {
-                let accountCopy = account
-                group.addTask {
-                    await self.refreshAccount(accountCopy)
-                }
-            }
+        for account in accounts {
+            await refreshAccount(account)
         }
     }
 

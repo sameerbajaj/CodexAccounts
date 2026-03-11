@@ -192,12 +192,12 @@ struct MenuBarPopover: View {
         } label: {
             toolbarButtonLabel(
                 systemImage: currentSortSymbol,
+                text: viewModel.sortMode.rawValue,
                 isActive: viewModel.sortMode != .pinned
             )
         }
         .menuStyle(.borderlessButton)
         .menuIndicator(.hidden)
-        .environment(\.colorScheme, .dark)
         .help("Sort accounts: \(viewModel.sortMode.rawValue)")
     }
 
@@ -246,6 +246,27 @@ struct MenuBarPopover: View {
                 .foregroundStyle(isActive ? Color.accentColor : Color.white.opacity(0.82))
         }
         .frame(width: 30, height: 30)
+    }
+
+    private func toolbarButtonLabel(systemImage: String, text: String, isActive: Bool = false) -> some View {
+        HStack(spacing: 5) {
+            Image(systemName: systemImage)
+                .font(.system(size: 11, weight: .semibold))
+            Text(text)
+                .font(.system(size: 10.5, weight: .semibold, design: .rounded))
+                .lineLimit(1)
+        }
+        .foregroundStyle(isActive ? Color.accentColor : Color.white.opacity(0.90))
+        .padding(.horizontal, 9)
+        .frame(height: 30)
+        .background(
+            RoundedRectangle(cornerRadius: 8)
+                .fill(isActive ? Color.accentColor.opacity(0.16) : Color.white.opacity(0.08))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 8)
+                .stroke(isActive ? Color.accentColor.opacity(0.35) : Color.white.opacity(0.10), lineWidth: 1)
+        )
     }
 
     // MARK: - Main Content
