@@ -8,35 +8,44 @@
 import SwiftUI
 import AppKit
 
+// MARK: - Tab Enum
+
+private enum PopoverTab: String, CaseIterable, Identifiable {
+    case accounts = "Accounts"
+    case settings = "Settings"
+
+    var id: String { rawValue }
+
+    var icon: String {
+        switch self {
+        case .accounts: return "person.2.fill"
+        case .settings: return "gearshape.fill"
+        }
+    }
+}
+
 struct MenuBarPopover: View {
     @Bindable var viewModel: AccountsViewModel
-    @State private var showingSettings = false
+    @State private var selectedTab: PopoverTab = .accounts
 
     var body: some View {
         VStack(spacing: 0) {
             header
 
-            if showingSettings {
-                settingsPanel
-                    .padding(.horizontal, 10)
-                    .padding(.top, 10)
-                    .transition(.opacity.combined(with: .move(edge: .top)))
+            // Tab content area — fixed switch, no layout-shifting animation
+            Group {
+                switch selectedTab {
+                case .accounts:
+                    accountsTabContent
+                case .settings:
+                    settingsPanel
+                        .padding(.horizontal, 10)
+                        .padding(.top, 10)
+                        .padding(.bottom, 6)
+                }
             }
-
-            if viewModel.showingAddAccount {
-                AddAccountView(
-                    status: viewModel.addAccountStatus,
-                    hasExistingAccounts: !viewModel.accounts.isEmpty,
-                    onCancel: { viewModel.cancelAdding() }
-                )
-                .transition(.opacity.combined(with: .move(edge: .bottom)))
-            } else if viewModel.accounts.isEmpty {
-                EmptyStateView(onAddAccount: { viewModel.startAddingAccount() })
-                    .transition(.opacity)
-            } else {
-                mainContent
-                    .transition(.opacity)
-            }
+            .transition(.opacity)
+            .animation(.easeInOut(duration: 0.15), value: selectedTab)
 
             Divider()
                 .background(Color.white.opacity(0.12))
@@ -46,15 +55,36 @@ struct MenuBarPopover: View {
         .background(Color(red: 0.14, green: 0.14, blue: 0.16))
         .environment(\.colorScheme, .dark)
         .preferredColorScheme(.dark)
-        .animation(.easeInOut(duration: 0.2), value: viewModel.showingAddAccount)
         .task { viewModel.setup() }
+    }
+
+    // MARK: - Accounts Tab Content
+
+    @ViewBuilder
+    private var accountsTabContent: some View {
+        if viewModel.showingAddAccount {
+            AddAccountView(
+                status: viewModel.addAccountStatus,
+                hasExistingAccounts: !viewModel.accounts.isEmpty,
+                onCancel: { viewModel.cancelAdding() }
+            )
+            .transition(.opacity)
+        } else if viewModel.accounts.isEmpty {
+            EmptyStateView(onAddAccount: { viewModel.startAddingAccount() })
+                .transition(.opacity)
+        } else {
+            mainContent
+                .transition(.opacity)
+        }
     }
 
     // MARK: - Header
 
     private var header: some View {
         VStack(spacing: 0) {
-            HStack(alignment: .center, spacing: 12) {
+            // Row 1: Logo + Title + Toolbar actions
+            HStack(spacing: 0) {
+                // Logo + title — fixed, never wraps
                 HStack(spacing: 10) {
                     ZStack {
                         RoundedRectangle(cornerRadius: 7)
@@ -71,35 +101,77 @@ struct MenuBarPopover: View {
                             .foregroundStyle(.white)
                     }
 
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("Codex Accounts")
-                            .font(.system(size: 14, weight: .semibold))
-                            .foregroundStyle(.white)
-                            .lineLimit(1)
-                            .minimumScaleFactor(0.9)
-
-                        Text(headerSubtitle)
-                            .font(.system(size: 10.5, weight: .medium))
-                            .foregroundStyle(Color.white.opacity(0.62))
-                            .lineLimit(1)
-                    }
+                    Text("Codex Accounts")
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundStyle(.white)
+                        .fixedSize(horizontal: true, vertical: false)
                 }
-                .layoutPriority(1)
 
                 Spacer()
 
-                if !viewModel.accounts.isEmpty {
-                    sortMenuButton
-                    refreshButton
+                // Toolbar actions — only show when on accounts tab with accounts
+                if selectedTab == .accounts && !viewModel.accounts.isEmpty {
+                    HStack(spacing: 6) {
+                        sortMenuButton
+                        refreshButton
+                    }
                 }
             }
             .padding(.horizontal, 16)
             .padding(.top, 14)
-            .padding(.bottom, 12)
-            .background(Color.white.opacity(0.02))
+            .padding(.bottom, 10)
+
+            // Row 2: Segmented tab picker
+            tabPicker
+                .padding(.horizontal, 16)
+                .padding(.bottom, 10)
 
             Divider().background(Color.white.opacity(0.12))
         }
+        .background(Color.white.opacity(0.02))
+    }
+
+    // MARK: - Tab Picker
+
+    private var tabPicker: some View {
+        HStack(spacing: 2) {
+            ForEach(PopoverTab.allCases) { tab in
+                Button {
+                    withAnimation(.easeInOut(duration: 0.15)) {
+                        selectedTab = tab
+                    }
+                } label: {
+                    HStack(spacing: 5) {
+                        Image(systemName: tab.icon)
+                            .font(.system(size: 10, weight: .medium))
+                        Text(tab.rawValue)
+                            .font(.system(size: 11, weight: .medium))
+                    }
+                    .foregroundStyle(
+                        selectedTab == tab
+                            ? Color.white
+                            : Color.white.opacity(0.50)
+                    )
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 6)
+                    .background(
+                        RoundedRectangle(cornerRadius: 7)
+                            .fill(
+                                selectedTab == tab
+                                    ? Color.white.opacity(0.12)
+                                    : Color.clear
+                            )
+                    )
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .padding(3)
+        .background(
+            RoundedRectangle(cornerRadius: 9)
+                .fill(Color.white.opacity(0.06))
+        )
     }
 
     private var headerSubtitle: String {
@@ -356,38 +428,6 @@ struct MenuBarPopover: View {
 
     private var settingsPanel: some View {
         VStack(alignment: .leading, spacing: 0) {
-            HStack(spacing: 10) {
-                Label("Settings", systemImage: "gearshape.fill")
-                    .font(.system(size: 12.5, weight: .semibold))
-                    .foregroundStyle(.white)
-
-                Spacer()
-
-                Button {
-                    showingSettings = false
-                } label: {
-                    HStack(spacing: 4) {
-                        Text("Collapse")
-                            .font(.system(size: 10.5, weight: .medium))
-                        Image(systemName: "chevron.up")
-                            .font(.system(size: 9, weight: .bold))
-                    }
-                    .foregroundStyle(Color.white.opacity(0.82))
-                    .padding(.horizontal, 9)
-                    .padding(.vertical, 5)
-                    .background(
-                        Capsule()
-                            .fill(Color.white.opacity(0.10))
-                    )
-                }
-                .buttonStyle(.plain)
-            }
-            .padding(.horizontal, 14)
-            .padding(.top, 12)
-            .padding(.bottom, 8)
-
-            Divider().background(Color.white.opacity(0.12)).padding(.horizontal, 14)
-
             settingsSection(title: "Menu Bar Shows") {
                 ForEach(AccountsViewModel.MenuBarDisplayMode.allCases) { mode in
                     settingsRow(
@@ -562,17 +602,6 @@ struct MenuBarPopover: View {
             Spacer()
 
             Button {
-                withAnimation(.easeInOut(duration: 0.18)) {
-                    showingSettings.toggle()
-                }
-            } label: {
-                Image(systemName: showingSettings ? "gearshape.fill" : "gearshape")
-                    .font(.system(size: 12))
-                    .foregroundStyle(showingSettings ? Color.accentColor : Color.white.opacity(0.75))
-            }
-            .buttonStyle(.plain)
-
-            Button {
                 NSWorkspace.shared.open(UpdateChecker.releasesPage)
             } label: {
                 Text("v\(UpdateChecker.currentVersion)")
@@ -593,4 +622,3 @@ struct MenuBarPopover: View {
         .padding(.vertical, 10)
     }
 }
-
