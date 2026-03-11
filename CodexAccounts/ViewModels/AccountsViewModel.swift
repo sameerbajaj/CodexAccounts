@@ -26,6 +26,8 @@ final class AccountsViewModel {
     var selfUpdateState: SelfUpdateState = .idle
     var testMessageResults: [String: TestMessageResult] = [:]
     var testMessageLoading: Set<String> = []
+    private var frozenAccountOrder: [String]? = nil
+    private var activeRefreshCount = 0
 
     // Stored so @Observable tracks changes and SwiftUI re-renders immediately
     var menuBarDisplayMode: MenuBarDisplayMode = .iconAndPercent {
@@ -124,6 +126,21 @@ final class AccountsViewModel {
         }
 
         return pinned + sortedUnpinned
+    }
+
+    /// Stable account order shown in the popover. Dynamic sorts are frozen while
+    /// refresh work is in-flight so rows do not jump around mid-update.
+    var displayedAccounts: [CodexAccount] {
+        let current = sortedAccounts
+        guard activeRefreshCount > 0, let frozenAccountOrder else {
+            return current
+        }
+
+        let accountsByID = Dictionary(uniqueKeysWithValues: current.map { ($0.id, $0) })
+        let frozenIDs = Set(frozenAccountOrder)
+        let frozen = frozenAccountOrder.compactMap { accountsByID[$0] }
+        let remaining = current.filter { !frozenIDs.contains($0.id) }
+        return frozen + remaining
     }
 
     // MARK: - Menu Bar Display Mode
@@ -262,6 +279,9 @@ final class AccountsViewModel {
     }
 
     func refreshAccount(_ account: CodexAccount) async {
+        beginRefreshCycle()
+        defer { endRefreshCycle() }
+
         accountStatuses[account.id] = .refreshing
         let previousUsage = usageData[account.id]
 
@@ -300,6 +320,20 @@ final class AccountsViewModel {
             usage.error = error.localizedDescription
             usage.lastUpdated = Date()
             usageData[account.id] = usage
+        }
+    }
+
+    private func beginRefreshCycle() {
+        if activeRefreshCount == 0 {
+            frozenAccountOrder = sortedAccounts.map(\.id)
+        }
+        activeRefreshCount += 1
+    }
+
+    private func endRefreshCycle() {
+        activeRefreshCount = max(0, activeRefreshCount - 1)
+        if activeRefreshCount == 0 {
+            frozenAccountOrder = nil
         }
     }
 
@@ -371,7 +405,7 @@ final class AccountsViewModel {
         guard let interval = refreshInterval.seconds else { return }
         refreshTimer = Timer.scheduledTimer(withTimeInterval: interval, repeats: true) { [weak self] _ in
             guard let self else { return }
-            Task {
+            Task { @MainActor in
                 if self.refreshInterval == .twoMin, let top = self.sortedAccounts.first {
                     await self.refreshAccount(top)
                 } else {

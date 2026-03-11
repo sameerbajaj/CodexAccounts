@@ -47,10 +47,6 @@ struct MenuBarPopover: View {
         .environment(\.colorScheme, .dark)
         .preferredColorScheme(.dark)
         .animation(.easeInOut(duration: 0.2), value: viewModel.showingAddAccount)
-        .animation(.easeInOut(duration: 0.2), value: viewModel.accounts.count)
-        .animation(.easeInOut(duration: 0.2), value: showingSettings)
-        .animation(.easeInOut(duration: 0.3), value: viewModel.availableUpdate?.version)
-        .animation(.easeInOut(duration: 0.25), value: viewModel.selfUpdateState)
         .task { viewModel.setup() }
     }
 
@@ -58,8 +54,8 @@ struct MenuBarPopover: View {
 
     private var header: some View {
         VStack(spacing: 0) {
-            HStack(alignment: .center, spacing: 8) {
-                HStack(spacing: 8) {
+            HStack(alignment: .center, spacing: 12) {
+                HStack(spacing: 10) {
                     ZStack {
                         RoundedRectangle(cornerRadius: 7)
                             .fill(
@@ -74,69 +70,27 @@ struct MenuBarPopover: View {
                             .font(.system(size: 13, weight: .semibold))
                             .foregroundStyle(.white)
                     }
-                    Text("Codex Accounts")
-                        .font(.system(size: 14, weight: .semibold))
-                        .foregroundStyle(.white)
+
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Codex Accounts")
+                            .font(.system(size: 14, weight: .semibold))
+                            .foregroundStyle(.white)
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.9)
+
+                        Text(headerSubtitle)
+                            .font(.system(size: 10.5, weight: .medium))
+                            .foregroundStyle(Color.white.opacity(0.62))
+                            .lineLimit(1)
+                    }
                 }
+                .layoutPriority(1)
 
                 Spacer()
 
                 if !viewModel.accounts.isEmpty {
-                    Menu {
-                        ForEach(AccountsViewModel.SortMode.allCases) { mode in
-                            Button {
-                                viewModel.sortMode = mode
-                            } label: {
-                                Label(mode.rawValue, systemImage: mode.icon)
-                            }
-                        }
-                    } label: {
-                        HStack(spacing: 3) {
-                            Image(systemName: "arrow.up.arrow.down")
-                                .symbolRenderingMode(.monochrome)
-                                .foregroundColor(.white)
-                                .font(.system(size: 10, weight: .medium))
-                            Text(viewModel.sortMode.rawValue)
-                                .foregroundColor(.white)
-                                .font(.system(size: 10, weight: .medium))
-                        }
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 4)
-                        .background(
-                            RoundedRectangle(cornerRadius: 6)
-                                .fill(Color.white.opacity(0.18))
-                        )
-                    }
-                    .menuStyle(.borderlessButton)
-                    .menuIndicator(.hidden)
-                    .environment(\.colorScheme, .dark)
-                    .fixedSize()
-
-                    topSettingsButton
-
-                    Button(action: {
-                        Task { await viewModel.refreshAll() }
-                    }) {
-                        ZStack {
-                            Image(systemName: "arrow.clockwise")
-                                .font(.system(size: 12, weight: .medium))
-                                .foregroundStyle(Color.white.opacity(0.80))
-                                .opacity(viewModel.isRefreshing ? 0 : 1)
-
-                            if viewModel.isRefreshing {
-                                ProgressView()
-                                    .controlSize(.mini)
-                                    .tint(Color.white.opacity(0.80))
-                            }
-                        }
-                        .frame(width: 14, height: 14, alignment: .center)
-                    }
-                    .buttonStyle(.plain)
-                    .frame(width: 18, height: 18, alignment: .center)
-                    .contentShape(Rectangle())
-                    .disabled(viewModel.isRefreshing)
-                } else {
-                    topSettingsButton
+                    sortMenuButton
+                    refreshButton
                 }
             }
             .padding(.horizontal, 16)
@@ -148,26 +102,78 @@ struct MenuBarPopover: View {
         }
     }
 
-    private var topSettingsButton: some View {
-        Button {
-            showingSettings.toggle()
-        } label: {
-            HStack(spacing: 4) {
-                Image(systemName: showingSettings ? "chevron.up.circle.fill" : "gearshape.fill")
-                    .font(.system(size: 10.5, weight: .semibold))
-                Text(showingSettings ? "Hide" : "Settings")
-                    .font(.system(size: 10, weight: .medium))
+    private var headerSubtitle: String {
+        let count = viewModel.accounts.count
+        guard count > 0 else { return "Track Codex usage from the menu bar" }
+        return "\(count) account\(count == 1 ? "" : "s") connected"
+    }
+
+    private var sortMenuButton: some View {
+        Menu {
+            ForEach(AccountsViewModel.SortMode.allCases) { mode in
+                Button {
+                    viewModel.sortMode = mode
+                } label: {
+                    Label(mode.rawValue, systemImage: mode.icon)
+                }
             }
-            .foregroundStyle(showingSettings ? Color.accentColor : Color.white.opacity(0.82))
-            .padding(.horizontal, 8)
-            .padding(.vertical, 4)
-            .background(
-                RoundedRectangle(cornerRadius: 6)
-                    .fill(showingSettings ? Color.accentColor.opacity(0.16) : Color.white.opacity(0.08))
+        } label: {
+            toolbarButtonLabel(
+                systemImage: currentSortSymbol,
+                isActive: viewModel.sortMode != .pinned
             )
         }
+        .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
+        .environment(\.colorScheme, .dark)
+        .help("Sort accounts: \(viewModel.sortMode.rawValue)")
+    }
+
+    private var refreshButton: some View {
+        Button {
+            Task { await viewModel.refreshAll() }
+        } label: {
+            ZStack {
+                toolbarButtonLabel(systemImage: "arrow.clockwise")
+                    .opacity(viewModel.isRefreshing ? 0 : 1)
+
+                if viewModel.isRefreshing {
+                    ProgressView()
+                        .controlSize(.mini)
+                        .tint(Color.white.opacity(0.85))
+                        .frame(width: 30, height: 30)
+                }
+            }
+        }
         .buttonStyle(.plain)
-        .help(showingSettings ? "Collapse settings" : "Show settings")
+        .disabled(viewModel.isRefreshing)
+        .help(viewModel.isRefreshing ? "Refreshing accounts" : "Refresh all accounts")
+    }
+
+    private var currentSortSymbol: String {
+        switch viewModel.sortMode {
+        case .pinned:
+            return "pin"
+        case .nearestReset:
+            return "clock.arrow.trianglehead.counterclockwise.rotate.90"
+        case .lowestUsage:
+            return "chart.bar.fill"
+        case .recentActivity:
+            return "bolt.fill"
+        }
+    }
+
+    private func toolbarButtonLabel(systemImage: String, isActive: Bool = false) -> some View {
+        ZStack {
+            RoundedRectangle(cornerRadius: 8)
+                .fill(isActive ? Color.accentColor.opacity(0.16) : Color.white.opacity(0.08))
+            RoundedRectangle(cornerRadius: 8)
+                .stroke(isActive ? Color.accentColor.opacity(0.35) : Color.white.opacity(0.10), lineWidth: 1)
+            Image(systemName: systemImage)
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(isActive ? Color.accentColor : Color.white.opacity(0.82))
+        }
+        .frame(width: 30, height: 30)
     }
 
     // MARK: - Main Content
@@ -185,7 +191,7 @@ struct MenuBarPopover: View {
             }
 
             VStack(spacing: 5) {
-                ForEach(viewModel.sortedAccounts) { account in
+                ForEach(viewModel.displayedAccounts) { account in
                     AccountCardView(
                         account: account,
                         usage: viewModel.usageData[account.id],
@@ -556,7 +562,9 @@ struct MenuBarPopover: View {
             Spacer()
 
             Button {
-                showingSettings.toggle()
+                withAnimation(.easeInOut(duration: 0.18)) {
+                    showingSettings.toggle()
+                }
             } label: {
                 Image(systemName: showingSettings ? "gearshape.fill" : "gearshape")
                     .font(.system(size: 12))
