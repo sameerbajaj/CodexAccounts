@@ -19,7 +19,9 @@ final class AccountsViewModel {
     var showingAddAccount = false
     var addAccountStatus: AddAccountStatus = .idle
     var detectedUntrackedEmail: String? = nil
-    var sortMode: SortMode = .pinned
+    var sortMode: SortMode = .pinned {
+        didSet { UserDefaults.standard.set(sortMode.rawValue, forKey: "sortMode") }
+    }
     var availableUpdate: UpdateInfo? = nil
     var isCheckingForUpdates = false
     var updateCheckMessage: String? = nil
@@ -83,6 +85,10 @@ final class AccountsViewModel {
         if let raw = UserDefaults.standard.string(forKey: "refreshInterval"),
            let interval = RefreshInterval(rawValue: raw) {
             refreshInterval = interval
+        }
+        if let raw = UserDefaults.standard.string(forKey: "sortMode"),
+           let mode = SortMode(rawValue: raw) {
+            sortMode = mode
         }
         if UserDefaults.standard.object(forKey: "autoCheckUpdatesOnLaunch") != nil {
             autoCheckUpdatesOnLaunch = UserDefaults.standard.bool(forKey: "autoCheckUpdatesOnLaunch")

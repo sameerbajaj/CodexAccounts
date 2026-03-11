@@ -74,20 +74,20 @@ enum CodexAPIService {
     // MARK: - Public API
 
     /// Fetch usage for an account, automatically refreshing the token if expired.
-    static func fetchUsageWithRefresh(for account: CodexAccount) async throws -> FetchResult {
+    static func fetchUsageWithRefresh(for account: CodexAccount, previous: AccountUsage? = nil) async throws -> FetchResult {
         do {
-            let usage = try await fetchUsage(for: account)
+            let usage = try await fetchUsage(for: account, previous: previous)
             return FetchResult(usage: usage, updatedAccount: nil)
         } catch APIError.unauthorized {
             // Token expired — try refreshing
             let refreshed = try await refreshToken(for: account)
-            let usage = try await fetchUsage(for: refreshed)
+            let usage = try await fetchUsage(for: refreshed, previous: previous)
             return FetchResult(usage: usage, updatedAccount: refreshed)
         }
     }
 
     /// Fetch usage data for a single account.
-    static func fetchUsage(for account: CodexAccount) async throws -> AccountUsage {
+    static func fetchUsage(for account: CodexAccount, previous: AccountUsage? = nil) async throws -> AccountUsage {
         guard let url = URL(string: usageURL) else {
             throw APIError.invalidResponse
         }
@@ -118,7 +118,7 @@ enum CodexAPIService {
         case 200 ... 299:
             do {
                 let usageResponse = try JSONDecoder().decode(CodexUsageResponse.self, from: data)
-                return AccountUsage(from: usageResponse)
+                return AccountUsage(from: usageResponse, previous: previous)
             } catch {
                 throw APIError.invalidResponse
             }
