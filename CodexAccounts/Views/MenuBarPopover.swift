@@ -608,36 +608,47 @@ struct MenuBarPopover: View {
     // MARK: - Footer
 
     private var footer: some View {
-        HStack {
-            Button(action: { viewModel.startAddingAccount() }) {
-                HStack(spacing: 5) {
-                    Image(systemName: "plus.circle.fill")
-                        .font(.system(size: 12))
-                    Text("Add Account")
-                        .font(.system(size: 11, weight: .medium))
+        VStack(spacing: 6) {
+            if let lastAudit = viewModel.lastSessionAuditAt {
+                HStack {
+                    Text("Last auth audit \(lastAudit.relativeDescription)")
+                        .font(.system(size: 9.5))
+                        .foregroundStyle(Color.white.opacity(0.55))
+                    Spacer()
                 }
             }
-            .buttonStyle(.plain)
-            .foregroundStyle(Color(red: 0.40, green: 0.65, blue: 1.0))
 
-            Spacer()
-
-            Button {
-                NSWorkspace.shared.open(UpdateChecker.releasesPage)
-            } label: {
-                Text("v\(UpdateChecker.currentVersion)")
-                    .font(.system(size: 9.5, weight: .medium))
-                    .foregroundStyle(viewModel.availableUpdate != nil
-                                     ? Color.green
-                                     : Color.white.opacity(0.60))
-            }
-            .buttonStyle(.plain)
-            .padding(.horizontal, 4)
-
-            Button("Quit") { NSApplication.shared.terminate(nil) }
+            HStack {
+                Button(action: { viewModel.startAddingAccount() }) {
+                    HStack(spacing: 5) {
+                        Image(systemName: "plus.circle.fill")
+                            .font(.system(size: 12))
+                        Text("Add Account")
+                            .font(.system(size: 11, weight: .medium))
+                    }
+                }
                 .buttonStyle(.plain)
-                .font(.system(size: 11, weight: .medium))
-                .foregroundStyle(Color.white.opacity(0.75))
+                .foregroundStyle(Color(red: 0.40, green: 0.65, blue: 1.0))
+
+                Spacer()
+
+                Button {
+                    NSWorkspace.shared.open(UpdateChecker.releasesPage)
+                } label: {
+                    Text("v\(UpdateChecker.currentVersion)")
+                        .font(.system(size: 9.5, weight: .medium))
+                        .foregroundStyle(viewModel.availableUpdate != nil
+                                         ? Color.green
+                                         : Color.white.opacity(0.60))
+                }
+                .buttonStyle(.plain)
+                .padding(.horizontal, 4)
+
+                Button("Quit") { NSApplication.shared.terminate(nil) }
+                    .buttonStyle(.plain)
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(Color.white.opacity(0.75))
+            }
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 10)

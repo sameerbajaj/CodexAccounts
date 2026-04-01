@@ -5,9 +5,11 @@
 //  Created by Sameer Bajaj on 2/21/26.
 //
 
+import AppKit
 import Foundation
 import SwiftUI
 
+@MainActor
 @Observable
 final class AccountsViewModel {
     // MARK: - Published State
@@ -22,7 +24,6 @@ final class AccountsViewModel {
     var sortMode: SortMode = .pinned {
         didSet {
             UserDefaults.standard.set(sortMode.rawValue, forKey: "sortMode")
-            // Apply new sort immediately even if a refresh is currently in-flight.
             frozenAccountOrder = nil
         }
     }
@@ -32,8 +33,7 @@ final class AccountsViewModel {
     var selfUpdateState: SelfUpdateState = .idle
     var testMessageResults: [String: TestMessageResult] = [:]
     var testMessageLoading: Set<String> = []
-    private var frozenAccountOrder: [String]? = nil
-    private var activeRefreshCount = 0
+    var lastSessionAuditAt: Date? = nil
 
     // Stored so @Observable tracks changes and SwiftUI re-renders immediately
     var menuBarDisplayMode: MenuBarDisplayMode = .iconAndPercent {
@@ -69,91 +69,12 @@ final class AccountsViewModel {
         }
     }
 
-    // MARK: - Private
-
-    private var hasSetup = false
-    private var refreshTimer: Timer?
-    private var tokenKeepAliveTimer: Timer?
-    private let fileWatcher = AuthFileWatcher()
-    private let tokenKeepAliveCheckInterval: TimeInterval = 600
-    private let tokenRefreshMaxAge: TimeInterval = 45 * 60
-
-    // MARK: - Init
-
-    init() {
-        // Load persisted preferences (didSet does NOT fire during init)
-        if let raw = UserDefaults.standard.string(forKey: "menuBarDisplayMode"),
-           let mode = MenuBarDisplayMode(rawValue: raw) {
-            menuBarDisplayMode = mode
-        }
-        if let raw = UserDefaults.standard.string(forKey: "refreshInterval"),
-           let interval = RefreshInterval(rawValue: raw) {
-            refreshInterval = interval
-        }
-        if let raw = UserDefaults.standard.string(forKey: "sortMode"),
-           let mode = SortMode(rawValue: raw) {
-            sortMode = mode
-        }
-        if UserDefaults.standard.object(forKey: "autoCheckUpdatesOnLaunch") != nil {
-            autoCheckUpdatesOnLaunch = UserDefaults.standard.bool(forKey: "autoCheckUpdatesOnLaunch")
-        }
+    enum AddAccountStatus: Equatable {
+        case idle
+        case watching
+        case detected(String)
+        case error(String)
     }
-
-    deinit {
-        refreshTimer?.invalidate()
-        tokenKeepAliveTimer?.invalidate()
-    }
-
-    // MARK: - Computed
-
-    /// Accounts sorted according to current sort mode (pinned always first)
-    var sortedAccounts: [CodexAccount] {
-        let pinned = accounts.filter(\.isPinned)
-        let unpinned = accounts.filter { !$0.isPinned }
-
-        let sortedUnpinned: [CodexAccount]
-        switch sortMode {
-        case .pinned:
-            sortedUnpinned = unpinned.sorted { $0.addedAt < $1.addedAt }
-        case .nearestReset:
-            sortedUnpinned = unpinned.sorted { a, b in
-                let ra = usageData[a.id]?.resetAt ?? .distantFuture
-                let rb = usageData[b.id]?.resetAt ?? .distantFuture
-                return ra < rb
-            }
-        case .lowestUsage:
-            sortedUnpinned = unpinned.sorted { a, b in
-                let ra = usageData[a.id]?.remainingPercent ?? 100
-                let rb = usageData[b.id]?.remainingPercent ?? 100
-                return ra < rb  // lowest remaining first = most used first
-            }
-        case .recentActivity:
-            sortedUnpinned = unpinned.sorted { a, b in
-                let da = usageData[a.id]?.lastActivityAt ?? .distantPast
-                let db = usageData[b.id]?.lastActivityAt ?? .distantPast
-                return da > db  // most recent first
-            }
-        }
-
-        return pinned + sortedUnpinned
-    }
-
-    /// Stable account order shown in the popover. Dynamic sorts are frozen while
-    /// refresh work is in-flight so rows do not jump around mid-update.
-    var displayedAccounts: [CodexAccount] {
-        let current = sortedAccounts
-        guard activeRefreshCount > 0, let frozenAccountOrder else {
-            return current
-        }
-
-        let accountsByID = Dictionary(uniqueKeysWithValues: current.map { ($0.id, $0) })
-        let frozenIDs = Set(frozenAccountOrder)
-        let frozen = frozenAccountOrder.compactMap { accountsByID[$0] }
-        let remaining = current.filter { !frozenIDs.contains($0.id) }
-        return frozen + remaining
-    }
-
-    // MARK: - Menu Bar Display Mode
 
     enum MenuBarDisplayMode: String, CaseIterable, Identifiable {
         case iconAndPercent = "Icon + %"
@@ -179,66 +100,135 @@ final class AccountsViewModel {
         }
     }
 
-    // MARK: - Refresh Interval
-
     enum RefreshInterval: String, CaseIterable, Identifiable {
-        case twoMin  = "2 minutes"
+        case twoMin = "2 minutes"
         case fiveMin = "5 minutes"
-        case manual  = "Manual only"
+        case manual = "Manual only"
 
         var id: String { rawValue }
 
         var seconds: TimeInterval? {
             switch self {
-            case .twoMin:  return 120
+            case .twoMin: return 120
             case .fiveMin: return 300
-            case .manual:  return nil
+            case .manual: return nil
             }
         }
 
         var icon: String {
             switch self {
-            case .twoMin:  return "bolt.fill"
+            case .twoMin: return "bolt.fill"
             case .fiveMin: return "clock"
-            case .manual:  return "hand.tap"
+            case .manual: return "hand.tap"
             }
         }
 
         var description: String {
             switch self {
-            case .twoMin:  return "Top account only, every 2 min"
+            case .twoMin: return "Top account only, every 2 min"
             case .fiveMin: return "All accounts every 5 min"
-            case .manual:  return "Only when you tap refresh"
+            case .manual: return "Only when you tap refresh"
             }
         }
     }
 
-    /// Remaining % for the top account in current sort order
+    // MARK: - Private
+
+    private var hasSetup = false
+    private var refreshTimer: Timer?
+    private var tokenAuditTimer: Timer?
+    private let syncWatcher = AuthFileWatcher()
+    private let addAccountWatcher = AuthFileWatcher()
+    private var lifecycleObservers: [NSObjectProtocol] = []
+    private var frozenAccountOrder: [String]? = nil
+    private var activeRefreshCount = 0
+    private var isAuditingSessions = false
+
+    private let tokenAuditInterval: TimeInterval = 600
+    private let tokenRefreshMaxAge: TimeInterval = 45 * 60
+    private let staleSessionThreshold: TimeInterval = 55 * 60
+    private let resumeAuditGapThreshold: TimeInterval = 20 * 60
+
+    // MARK: - Init
+
+    init() {
+        if let raw = UserDefaults.standard.string(forKey: "menuBarDisplayMode"),
+           let mode = MenuBarDisplayMode(rawValue: raw) {
+            menuBarDisplayMode = mode
+        }
+        if let raw = UserDefaults.standard.string(forKey: "refreshInterval"),
+           let interval = RefreshInterval(rawValue: raw) {
+            refreshInterval = interval
+        }
+        if let raw = UserDefaults.standard.string(forKey: "sortMode"),
+           let mode = SortMode(rawValue: raw) {
+            sortMode = mode
+        }
+        if UserDefaults.standard.object(forKey: "autoCheckUpdatesOnLaunch") != nil {
+            autoCheckUpdatesOnLaunch = UserDefaults.standard.bool(forKey: "autoCheckUpdatesOnLaunch")
+        }
+    }
+
+    // MARK: - Computed
+
+    var sortedAccounts: [CodexAccount] {
+        let pinned = accounts.filter(\.isPinned)
+        let unpinned = accounts.filter { !$0.isPinned }
+
+        let sortedUnpinned: [CodexAccount]
+        switch sortMode {
+        case .pinned:
+            sortedUnpinned = unpinned.sorted { $0.addedAt < $1.addedAt }
+        case .nearestReset:
+            sortedUnpinned = unpinned.sorted { a, b in
+                let ra = usageData[a.id]?.resetAt ?? .distantFuture
+                let rb = usageData[b.id]?.resetAt ?? .distantFuture
+                return ra < rb
+            }
+        case .lowestUsage:
+            sortedUnpinned = unpinned.sorted { a, b in
+                let ra = usageData[a.id]?.remainingPercent ?? 100
+                let rb = usageData[b.id]?.remainingPercent ?? 100
+                return ra < rb
+            }
+        case .recentActivity:
+            sortedUnpinned = unpinned.sorted { a, b in
+                let da = usageData[a.id]?.lastActivityAt ?? .distantPast
+                let db = usageData[b.id]?.lastActivityAt ?? .distantPast
+                return da > db
+            }
+        }
+
+        return pinned + sortedUnpinned
+    }
+
+    var displayedAccounts: [CodexAccount] {
+        let current = sortedAccounts
+        guard activeRefreshCount > 0, let frozenAccountOrder else {
+            return current
+        }
+
+        let accountsByID = Dictionary(uniqueKeysWithValues: current.map { ($0.id, $0) })
+        let frozenIDs = Set(frozenAccountOrder)
+        let frozen = frozenAccountOrder.compactMap { accountsByID[$0] }
+        let remaining = current.filter { !frozenIDs.contains($0.id) }
+        return frozen + remaining
+    }
+
     var topAccountRemaining: Double? {
         guard let top = sortedAccounts.first else { return nil }
         return usageData[top.id]?.remainingPercent
     }
 
-    /// Remaining % shown in the menu bar (always based on top account in sort order)
     var menuBarRemaining: Double? {
         topAccountRemaining
     }
 
-    /// Overall status color for the menu bar icon
     var statusColor: Color {
         guard let val = menuBarRemaining ?? topAccountRemaining else { return .secondary }
         if val > 40 { return .green }
-        else if val > 15 { return .orange }
-        else { return .red }
-    }
-
-    // MARK: - Add Account Status
-
-    enum AddAccountStatus: Equatable {
-        case idle
-        case watching
-        case detected(String)
-        case error(String)
+        if val > 15 { return .orange }
+        return .red
     }
 
     // MARK: - Setup
@@ -247,52 +237,84 @@ final class AccountsViewModel {
         guard !hasSetup else { return }
         hasSetup = true
 
-        // Load saved accounts
-        accounts = AccountStore.load()
+        accounts = AccountStore.load().map(normalizedAccountOnLoad)
+        applyAccountStates()
+        syncCurrentAuthFile()
 
-        // Check if current auth.json has an account we're not tracking
-        checkForUntrackedAccount()
-
-        // Auto-add on first launch if empty
         if accounts.isEmpty, let account = CodexAPIService.readAuthFile() {
             accounts.append(account)
-            AccountStore.save(accounts)
+            persistAccounts()
             detectedUntrackedEmail = nil
         }
 
-        // Refresh all accounts
-        Task { await refreshAll() }
+        startLifecycleObservers()
+        startAuthFileSync()
+        startAutoRefresh()
+        startTokenAudit()
+
+        Task { await auditAllSessions(trigger: .startup) }
+        Task { await refreshAll(trigger: .manualRefresh) }
 
         if autoCheckUpdatesOnLaunch {
             Task { await checkForUpdates(showUpToDateFeedback: false) }
         }
-
-        startAutoRefresh()
-        startTokenKeepAlive()
     }
 
     // MARK: - Refresh
 
     func refreshAll() async {
+        await refreshAll(trigger: .manualRefresh)
+    }
+
+    func refreshAll(trigger: CodexAPIService.AuditTrigger) async {
         guard !isRefreshing else { return }
         isRefreshing = true
         defer { isRefreshing = false }
 
         for account in accounts {
-            await refreshAccount(account)
+            await refreshAccount(account, trigger: trigger)
         }
     }
 
     func refreshAccount(_ account: CodexAccount) async {
+        await refreshAccount(account, trigger: .manualRefresh)
+    }
+
+    func refreshAccount(_ account: CodexAccount, trigger: CodexAPIService.AuditTrigger) async {
         beginRefreshCycle()
         defer { endRefreshCycle() }
 
         accountStatuses[account.id] = .refreshing
         let previousUsage = usageData[account.id]
+        var accountForUsage = currentAccount(id: account.id) ?? account
 
         do {
-            let result = try await CodexAPIService.fetchUsageWithRefresh(for: account)
-            // Build usage with activity tracking
+            let audit = try await CodexAPIService.auditSession(
+                for: accountForUsage,
+                trigger: trigger,
+                maxTokenAge: tokenRefreshMaxAge,
+                staleAfter: staleSessionThreshold
+            )
+            accountForUsage = mergeAccount(audit.account)
+        } catch let error as CodexAPIService.APIError {
+            let failed = CodexAPIService.markRefreshFailure(for: accountForUsage, error: error)
+            accountForUsage = mergeAccount(failed)
+
+            if error == .unauthorized {
+                setUsageError("Token expired. Please re-authenticate.", for: account.id)
+                accountStatuses[account.id] = .needsReauth
+                return
+            }
+        } catch {
+            let failed = CodexAPIService.markRefreshFailure(
+                for: accountForUsage,
+                error: .networkError(error.localizedDescription)
+            )
+            accountForUsage = mergeAccount(failed)
+        }
+
+        do {
+            let result = try await CodexAPIService.fetchUsageWithRefresh(for: accountForUsage, previous: previousUsage)
             var newUsage = result.usage
             if let prev = previousUsage, prev.usedPercent != newUsage.usedPercent {
                 newUsage.lastActivityAt = Date()
@@ -301,30 +323,16 @@ final class AccountsViewModel {
             }
             usageData[account.id] = newUsage
 
-            // Update stored tokens if they were refreshed
-            if let updated = result.updatedAccount {
-                if let idx = accounts.firstIndex(where: { $0.id == account.id }) {
-                    accounts[idx] = updated
-                    AccountStore.save(accounts)
-                }
-            }
-
-            // Update plan type from the identity
-            accountStatuses[account.id] = .active
-
+            let persisted = mergeAccount(result.updatedAccount ?? CodexAPIService.markUsageSuccess(for: accountForUsage))
+            accountStatuses[account.id] = status(for: persisted)
         } catch let error as CodexAPIService.APIError where error == .unauthorized {
-            accountStatuses[account.id] = .needsReauth
-            var usage = usageData[account.id] ?? AccountUsage.placeholder
-            usage.error = "Token expired. Please re-authenticate."
-            usage.lastUpdated = Date()
-            usageData[account.id] = usage
-
+            let failed = CodexAPIService.markRefreshFailure(for: accountForUsage, error: error)
+            let persisted = mergeAccount(failed)
+            setUsageError("Token expired. Please re-authenticate.", for: account.id)
+            accountStatuses[account.id] = status(for: persisted)
         } catch {
             accountStatuses[account.id] = .error(error.localizedDescription)
-            var usage = usageData[account.id] ?? AccountUsage.placeholder
-            usage.error = error.localizedDescription
-            usage.lastUpdated = Date()
-            usageData[account.id] = usage
+            setUsageError(error.localizedDescription, for: account.id)
         }
     }
 
@@ -342,37 +350,92 @@ final class AccountsViewModel {
         }
     }
 
+    // MARK: - Session Audit
+
+    func auditAllSessions(trigger: CodexAPIService.AuditTrigger) async {
+        guard !isAuditingSessions else { return }
+        guard !accounts.isEmpty else { return }
+
+        isAuditingSessions = true
+        defer {
+            isAuditingSessions = false
+            lastSessionAuditAt = Date()
+        }
+
+        for account in accounts {
+            let current = currentAccount(id: account.id) ?? account
+            do {
+                let result = try await CodexAPIService.auditSession(
+                    for: current,
+                    trigger: trigger,
+                    maxTokenAge: tokenRefreshMaxAge,
+                    staleAfter: staleSessionThreshold
+                )
+                let merged = mergeAccount(result.account)
+                accountStatuses[account.id] = status(for: merged)
+            } catch let error as CodexAPIService.APIError {
+                let failed = CodexAPIService.markRefreshFailure(for: current, error: error)
+                let merged = mergeAccount(failed)
+                if error == .unauthorized {
+                    setUsageError("Token expired. Please re-authenticate.", for: account.id)
+                }
+                accountStatuses[account.id] = status(for: merged)
+            } catch {
+                let failed = CodexAPIService.markRefreshFailure(
+                    for: current,
+                    error: .networkError(error.localizedDescription)
+                )
+                let merged = mergeAccount(failed)
+                accountStatuses[account.id] = status(for: merged)
+            }
+        }
+    }
+
+    private func startTokenAudit() {
+        tokenAuditTimer?.invalidate()
+        tokenAuditTimer = Timer.scheduledTimer(withTimeInterval: tokenAuditInterval, repeats: true) { [weak self] _ in
+            guard let self else { return }
+            Task { @MainActor in
+                await self.auditAllSessions(trigger: .timer)
+            }
+        }
+    }
+
+    private func handleLifecycleResume(trigger: CodexAPIService.AuditTrigger) {
+        let now = Date()
+        if let lastSessionAuditAt, now.timeIntervalSince(lastSessionAuditAt) < resumeAuditGapThreshold {
+            return
+        }
+
+        markStaleAccounts(now: now)
+        Task { await auditAllSessions(trigger: trigger) }
+    }
+
     // MARK: - Update Checking
 
     func checkForUpdates(showUpToDateFeedback: Bool = false) async {
-        await MainActor.run {
-            isCheckingForUpdates = true
-            if showUpToDateFeedback {
-                updateCheckMessage = nil
-            }
+        isCheckingForUpdates = true
+        if showUpToDateFeedback {
+            updateCheckMessage = nil
         }
 
         let update = await UpdateChecker.check()
 
-        await MainActor.run {
-            isCheckingForUpdates = false
-            availableUpdate = update
+        isCheckingForUpdates = false
+        availableUpdate = update
 
-            if let update {
-                updateCheckMessage = update.isRolling
-                    ? "New pre-release build available."
-                    : "New version v\(update.version) available."
-            } else if showUpToDateFeedback {
-                updateCheckMessage = "You’re up to date."
-            }
+        if let update {
+            updateCheckMessage = update.isRolling
+                ? "New pre-release build available."
+                : "New version v\(update.version) available."
+        } else if showUpToDateFeedback {
+            updateCheckMessage = "You’re up to date."
         }
 
         if showUpToDateFeedback {
             try? await Task.sleep(for: .seconds(4))
-            await MainActor.run {
-                if availableUpdate == nil {
-                    updateCheckMessage = nil
-                }
+            if availableUpdate == nil {
+                updateCheckMessage = nil
             }
         }
     }
@@ -381,19 +444,18 @@ final class AccountsViewModel {
         availableUpdate = nil
     }
 
-    /// Download, extract, replace, and relaunch in-place.
     func installUpdate() {
         guard let update = availableUpdate, let dmgURL = update.downloadURL else { return }
 
-        // Record the release's published_at so the update checker won't
-        // re-detect this same build after relaunch.
         if update.isRolling, let ts = update.publishedAt {
             UpdateChecker.recordInstalledRollingTimestamp(ts)
         }
 
         Task {
             await SelfUpdater.update(dmgURL: dmgURL) { [weak self] state in
-                self?.selfUpdateState = state
+                Task { @MainActor in
+                    self?.selfUpdateState = state
+                }
             }
         }
     }
@@ -412,79 +474,76 @@ final class AccountsViewModel {
             guard let self else { return }
             Task { @MainActor in
                 if self.refreshInterval == .twoMin, let top = self.sortedAccounts.first {
-                    await self.refreshAccount(top)
+                    await self.refreshAccount(top, trigger: .timer)
                 } else {
-                    await self.refreshAll()
+                    await self.refreshAll(trigger: .timer)
                 }
             }
         }
     }
 
-    private func startTokenKeepAlive() {
-        tokenKeepAliveTimer?.invalidate()
-        tokenKeepAliveTimer = Timer.scheduledTimer(withTimeInterval: tokenKeepAliveCheckInterval, repeats: true) {
-            [weak self] _ in
+    // MARK: - Auth File Sync
+
+    private func startAuthFileSync() {
+        syncWatcher.onAuthFileChanged = { [weak self] in
             guard let self else { return }
-            Task {
-                await self.refreshStaleTokens()
+            Task { @MainActor in
+                self.syncCurrentAuthFile(trigger: .authFileSync)
             }
         }
-
-        Task {
-            await refreshStaleTokens()
-        }
+        syncWatcher.start()
     }
 
-    private func refreshStaleTokens() async {
-        guard !accounts.isEmpty else { return }
-
-        for account in accounts {
-            do {
-                guard let refreshed = try await CodexAPIService.refreshTokenIfNeeded(
-                    for: account,
-                    maxTokenAge: tokenRefreshMaxAge
-                ) else {
-                    continue
-                }
-
-                if let idx = accounts.firstIndex(where: { $0.id == account.id }) {
-                    accounts[idx] = refreshed
-                    accountStatuses[account.id] = .active
-                    AccountStore.save(accounts)
-                }
-            } catch {
-                continue
-            }
-        }
-    }
-
-    // MARK: - Untracked Account Detection
-
-    private func checkForUntrackedAccount() {
+    private func syncCurrentAuthFile(trigger: CodexAPIService.AuditTrigger = .startup) {
         guard let authAccount = CodexAPIService.readAuthFile() else { return }
         let existingIds = Set(accounts.map(\.id))
 
         if !existingIds.contains(authAccount.id) {
             detectedUntrackedEmail = authAccount.email
-        } else {
-            // Update tokens for existing account
-            if let idx = accounts.firstIndex(where: { $0.id == authAccount.id }) {
-                accounts[idx].accessToken = authAccount.accessToken
-                accounts[idx].refreshToken = authAccount.refreshToken
-                accounts[idx].idToken = authAccount.idToken
-                accounts[idx].lastTokenRefresh = authAccount.lastTokenRefresh
-                AccountStore.save(accounts)
-            }
-            detectedUntrackedEmail = nil
+            return
         }
+
+        let merged = mergeAuthSnapshot(authAccount)
+        detectedUntrackedEmail = nil
+
+        if trigger == .authFileSync {
+            Task { await auditAllSessions(trigger: .authFileSync) }
+        }
+
+        accountStatuses[merged.id] = status(for: merged)
     }
+
+    private func mergeAuthSnapshot(_ authAccount: CodexAccount) -> CodexAccount {
+        guard let idx = accounts.firstIndex(where: { $0.id == authAccount.id }) else {
+            accounts.append(authAccount)
+            persistAccounts()
+            return authAccount
+        }
+
+        accounts[idx].accessToken = authAccount.accessToken
+        accounts[idx].refreshToken = authAccount.refreshToken
+        accounts[idx].idToken = authAccount.idToken
+        accounts[idx].planType = authAccount.planType
+        accounts[idx].accountId = authAccount.accountId
+        accounts[idx].lastTokenRefresh = authAccount.lastTokenRefresh
+        accounts[idx].lastSuccessfulTokenRefreshAt = authAccount.lastSuccessfulTokenRefreshAt ?? accounts[idx].lastSuccessfulTokenRefreshAt
+        if accounts[idx].authState != .needsReauth {
+            accounts[idx].authState = .healthy
+        }
+        persistAccounts()
+        return accounts[idx]
+    }
+
+    // MARK: - Untracked Account Detection
 
     func addDetectedAccount() {
         guard let account = CodexAPIService.readAuthFile() else { return }
         if !accounts.contains(where: { $0.id == account.id }) {
             accounts.append(account)
-            AccountStore.save(accounts)
-            Task { await refreshAccount(account) }
+            persistAccounts()
+            Task { await refreshAccount(account, trigger: .authFileSync) }
+        } else {
+            _ = mergeAuthSnapshot(account)
         }
         detectedUntrackedEmail = nil
     }
@@ -499,51 +558,41 @@ final class AccountsViewModel {
         showingAddAccount = true
         addAccountStatus = .watching
 
-        fileWatcher.onAuthFileChanged = { [weak self] in
-            self?.handleAuthFileChange()
+        addAccountWatcher.onAuthFileChanged = { [weak self] in
+            guard let self else { return }
+            Task { @MainActor in
+                self.handleAddAccountAuthFileChange()
+            }
         }
-        fileWatcher.start()
+        addAccountWatcher.start()
     }
 
     func cancelAdding() {
         showingAddAccount = false
         addAccountStatus = .idle
-        fileWatcher.stop()
+        addAccountWatcher.stop()
     }
 
-    private func handleAuthFileChange() {
-        // Small delay to let the file fully write
+    private func handleAddAccountAuthFileChange() {
         Task {
             try? await Task.sleep(for: .milliseconds(500))
-
             guard let account = CodexAPIService.readAuthFile() else {
                 addAccountStatus = .error("Could not read auth file. Try again.")
                 return
             }
 
-            let email = account.email
-
             if let idx = accounts.firstIndex(where: { $0.id == account.id }) {
-                // Update existing account tokens
-                accounts[idx].accessToken = account.accessToken
-                accounts[idx].refreshToken = account.refreshToken
-                accounts[idx].idToken = account.idToken
-                accounts[idx].planType = account.planType
-                accounts[idx].lastTokenRefresh = account.lastTokenRefresh
-                addAccountStatus = .detected("\(email) (updated)")
+                _ = mergeAuthSnapshot(account)
+                addAccountStatus = .detected("\(accounts[idx].email) (updated)")
             } else {
-                // New account
                 accounts.append(account)
-                addAccountStatus = .detected(email)
+                persistAccounts()
+                addAccountStatus = .detected(account.email)
             }
 
-            AccountStore.save(accounts)
-            fileWatcher.stop()
+            addAccountWatcher.stop()
+            Task { await refreshAccount(account, trigger: .authFileSync) }
 
-            // Fetch usage for the account
-            Task { await refreshAccount(account) }
-
-            // Auto-dismiss after showing confirmation
             try? await Task.sleep(for: .seconds(2))
             showingAddAccount = false
             addAccountStatus = .idle
@@ -556,7 +605,7 @@ final class AccountsViewModel {
         accounts.removeAll { $0.id == account.id }
         usageData.removeValue(forKey: account.id)
         accountStatuses.removeValue(forKey: account.id)
-        AccountStore.save(accounts)
+        persistAccounts()
     }
 
     func reauthAccount(_ account: CodexAccount) {
@@ -568,7 +617,7 @@ final class AccountsViewModel {
     func togglePin(_ account: CodexAccount) {
         guard let idx = accounts.firstIndex(where: { $0.id == account.id }) else { return }
         accounts[idx].isPinned.toggle()
-        AccountStore.save(accounts)
+        persistAccounts()
     }
 
     // MARK: - Test Message
@@ -585,7 +634,6 @@ final class AccountsViewModel {
                 testMessageResults[account.id] = result
             }
 
-            // Auto-dismiss after 8 seconds
             try? await Task.sleep(for: .seconds(8))
             await MainActor.run {
                 if testMessageResults[account.id]?.timestamp == result.timestamp {
@@ -597,5 +645,159 @@ final class AccountsViewModel {
 
     func dismissTestResult(_ accountId: String) {
         testMessageResults.removeValue(forKey: accountId)
+    }
+
+    // MARK: - Auth UI Helpers
+
+    func authStatusText(for account: CodexAccount) -> String {
+        switch account.authState {
+        case .healthy:
+            if let date = account.lastAuthValidationAt {
+                return "Auth OK \(date.relativeDescription)"
+            }
+            return "Auth OK"
+        case .stale:
+            if let date = account.lastAuthValidationAt {
+                return "Auth stale since \(date.relativeDescription)"
+            }
+            return "Auth stale"
+        case .degraded:
+            if let date = account.lastRefreshFailureAt {
+                return "Refresh failing \(date.relativeDescription)"
+            }
+            return "Refresh failing"
+        case .needsReauth:
+            return "Session expired"
+        }
+    }
+
+    // MARK: - Internal Helpers
+
+    private func normalizedAccountOnLoad(_ account: CodexAccount) -> CodexAccount {
+        var normalized = account
+        if normalized.lastSuccessfulTokenRefreshAt == nil {
+            normalized.lastSuccessfulTokenRefreshAt = normalized.lastTokenRefresh
+        }
+        normalized = CodexAPIService.markStaleIfNeeded(
+            for: normalized,
+            staleAfter: staleSessionThreshold
+        )
+        return normalized
+    }
+
+    private func persistAccounts() {
+        AccountStore.save(accounts)
+    }
+
+    private func currentAccount(id: String) -> CodexAccount? {
+        accounts.first(where: { $0.id == id })
+    }
+
+    @discardableResult
+    private func mergeAccount(_ account: CodexAccount) -> CodexAccount {
+        if let idx = accounts.firstIndex(where: { $0.id == account.id }) {
+            accounts[idx] = preservedAccountIdentity(from: account, existing: accounts[idx])
+            accountStatuses[account.id] = status(for: accounts[idx])
+            persistAccounts()
+            return accounts[idx]
+        }
+
+        let normalized = normalizedAccountOnLoad(account)
+        accounts.append(normalized)
+        accountStatuses[normalized.id] = status(for: normalized)
+        persistAccounts()
+        return normalized
+    }
+
+    private func preservedAccountIdentity(from account: CodexAccount, existing: CodexAccount) -> CodexAccount {
+        let preserved = CodexAccount(
+            email: account.email,
+            planType: account.planType,
+            accessToken: account.accessToken,
+            refreshToken: account.refreshToken,
+            idToken: account.idToken,
+            accountId: account.accountId,
+            lastTokenRefresh: account.lastTokenRefresh,
+            lastSuccessfulUsageAt: account.lastSuccessfulUsageAt,
+            lastSuccessfulTokenRefreshAt: account.lastSuccessfulTokenRefreshAt,
+            lastRefreshAttemptAt: account.lastRefreshAttemptAt,
+            lastRefreshFailureAt: account.lastRefreshFailureAt,
+            consecutiveRefreshFailures: account.consecutiveRefreshFailures,
+            authState: account.authState,
+            addedAt: existing.addedAt,
+            isPinned: existing.isPinned
+        )
+        return normalizedAccountOnLoad(preserved)
+    }
+
+    private func setUsageError(_ message: String, for accountID: String) {
+        var usage = usageData[accountID] ?? AccountUsage.placeholder
+        usage.error = message
+        usage.lastUpdated = Date()
+        usageData[accountID] = usage
+    }
+
+    private func applyAccountStates() {
+        for account in accounts {
+            accountStatuses[account.id] = status(for: account)
+        }
+    }
+
+    private func status(for account: CodexAccount) -> AccountStatus {
+        switch account.authState {
+        case .healthy: return .active
+        case .stale: return .stale
+        case .degraded: return .degraded
+        case .needsReauth: return .needsReauth
+        }
+    }
+
+    private func markStaleAccounts(now: Date = Date()) {
+        var changed = false
+        for idx in accounts.indices {
+            let updated = CodexAPIService.markStaleIfNeeded(
+                for: accounts[idx],
+                staleAfter: staleSessionThreshold,
+                now: now
+            )
+            if updated.authState != accounts[idx].authState {
+                accounts[idx] = updated
+                accountStatuses[updated.id] = status(for: updated)
+                changed = true
+            }
+        }
+        if changed {
+            persistAccounts()
+        }
+    }
+
+    private func startLifecycleObservers() {
+        guard lifecycleObservers.isEmpty else { return }
+
+        lifecycleObservers.append(
+            NotificationCenter.default.addObserver(
+                forName: NSWorkspace.didWakeNotification,
+                object: nil,
+                queue: .main
+            ) { [weak self] _ in
+                guard let self else { return }
+                Task { @MainActor in
+                    self.handleLifecycleResume(trigger: .resume)
+                }
+            }
+        )
+
+        lifecycleObservers.append(
+            NotificationCenter.default.addObserver(
+                forName: NSApplication.didBecomeActiveNotification,
+                object: nil,
+                queue: .main
+            ) { [weak self] _ in
+                guard let self else { return }
+                Task { @MainActor in
+                    self.handleLifecycleResume(trigger: .appDidBecomeActive)
+                }
+            }
+        )
     }
 }

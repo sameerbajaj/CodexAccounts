@@ -7,6 +7,22 @@
 
 import Foundation
 
+enum AuthState: String, Codable, Hashable {
+    case healthy
+    case stale
+    case degraded
+    case needsReauth
+
+    var displayName: String {
+        switch self {
+        case .healthy: return "Healthy"
+        case .stale: return "Stale"
+        case .degraded: return "Needs attention"
+        case .needsReauth: return "Expired"
+        }
+    }
+}
+
 struct CodexAccount: Identifiable, Codable, Hashable {
     let id: String
     var email: String
@@ -16,12 +32,22 @@ struct CodexAccount: Identifiable, Codable, Hashable {
     var idToken: String?
     var accountId: String?
     var lastTokenRefresh: Date?
+    var lastSuccessfulUsageAt: Date?
+    var lastSuccessfulTokenRefreshAt: Date?
+    var lastRefreshAttemptAt: Date?
+    var lastRefreshFailureAt: Date?
+    var consecutiveRefreshFailures: Int
+    var authState: AuthState
     let addedAt: Date
     var isPinned: Bool
 
     enum CodingKeys: String, CodingKey {
         case id, email, planType, accessToken, refreshToken
-        case idToken, accountId, lastTokenRefresh, addedAt, isPinned
+        case idToken, accountId, lastTokenRefresh
+        case lastSuccessfulUsageAt, lastSuccessfulTokenRefreshAt
+        case lastRefreshAttemptAt, lastRefreshFailureAt
+        case consecutiveRefreshFailures, authState
+        case addedAt, isPinned
     }
 
     init(
@@ -32,6 +58,13 @@ struct CodexAccount: Identifiable, Codable, Hashable {
         idToken: String? = nil,
         accountId: String? = nil,
         lastTokenRefresh: Date? = nil,
+        lastSuccessfulUsageAt: Date? = nil,
+        lastSuccessfulTokenRefreshAt: Date? = nil,
+        lastRefreshAttemptAt: Date? = nil,
+        lastRefreshFailureAt: Date? = nil,
+        consecutiveRefreshFailures: Int = 0,
+        authState: AuthState = .healthy,
+        addedAt: Date = Date(),
         isPinned: Bool = false
     ) {
         self.id = email.lowercased()
@@ -42,7 +75,13 @@ struct CodexAccount: Identifiable, Codable, Hashable {
         self.idToken = idToken
         self.accountId = accountId
         self.lastTokenRefresh = lastTokenRefresh
-        self.addedAt = Date()
+        self.lastSuccessfulUsageAt = lastSuccessfulUsageAt
+        self.lastSuccessfulTokenRefreshAt = lastSuccessfulTokenRefreshAt ?? lastTokenRefresh
+        self.lastRefreshAttemptAt = lastRefreshAttemptAt
+        self.lastRefreshFailureAt = lastRefreshFailureAt
+        self.consecutiveRefreshFailures = consecutiveRefreshFailures
+        self.authState = authState
+        self.addedAt = addedAt
         self.isPinned = isPinned
     }
 
@@ -56,6 +95,12 @@ struct CodexAccount: Identifiable, Codable, Hashable {
         idToken = try c.decodeIfPresent(String.self, forKey: .idToken)
         accountId = try c.decodeIfPresent(String.self, forKey: .accountId)
         lastTokenRefresh = try c.decodeIfPresent(Date.self, forKey: .lastTokenRefresh)
+        lastSuccessfulUsageAt = try c.decodeIfPresent(Date.self, forKey: .lastSuccessfulUsageAt)
+        lastSuccessfulTokenRefreshAt = try c.decodeIfPresent(Date.self, forKey: .lastSuccessfulTokenRefreshAt) ?? lastTokenRefresh
+        lastRefreshAttemptAt = try c.decodeIfPresent(Date.self, forKey: .lastRefreshAttemptAt)
+        lastRefreshFailureAt = try c.decodeIfPresent(Date.self, forKey: .lastRefreshFailureAt)
+        consecutiveRefreshFailures = (try? c.decode(Int.self, forKey: .consecutiveRefreshFailures)) ?? 0
+        authState = (try? c.decode(AuthState.self, forKey: .authState)) ?? .healthy
         addedAt = try c.decode(Date.self, forKey: .addedAt)
         isPinned = (try? c.decode(Bool.self, forKey: .isPinned)) ?? false
     }
@@ -77,6 +122,10 @@ struct CodexAccount: Identifiable, Codable, Hashable {
         case "edu", "education": return "Edu"
         default: return planType.capitalized
         }
+    }
+
+    var lastAuthValidationAt: Date? {
+        [lastSuccessfulTokenRefreshAt, lastSuccessfulUsageAt, lastTokenRefresh, addedAt].compactMap { $0 }.max()
     }
 }
 
@@ -114,6 +163,8 @@ struct AccountUsage: Equatable {
 enum AccountStatus {
     case active
     case refreshing
+    case stale
+    case degraded
     case needsReauth
     case error(String)
 }

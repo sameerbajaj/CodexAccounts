@@ -12,19 +12,6 @@ enum CodexAPIService {
     private static let refreshEndpoint = "https://auth.openai.com/oauth/token"
     private static let clientID = "app_EMoamEEZ73f0CkXaXp7hrann"
 
-    static func refreshTokenIfNeeded(
-        for account: CodexAccount,
-        maxTokenAge: TimeInterval,
-        now: Date = Date()
-    ) async throws -> CodexAccount? {
-        let baseline = account.lastTokenRefresh ?? account.addedAt
-        guard now.timeIntervalSince(baseline) >= maxTokenAge else {
-            return nil
-        }
-
-        return try await refreshToken(for: account)
-    }
-
     // MARK: - Errors
 
     enum APIError: LocalizedError, Equatable {
@@ -64,29 +51,115 @@ enum CodexAPIService {
         }
     }
 
-    // MARK: - Usage Fetch Result
+    // MARK: - Models
 
     struct FetchResult {
         let usage: AccountUsage
         let updatedAccount: CodexAccount?
     }
 
+    struct AuditResult {
+        let account: CodexAccount
+        let didRefresh: Bool
+    }
+
+    enum AuditTrigger {
+        case startup
+        case timer
+        case resume
+        case appDidBecomeActive
+        case manualRefresh
+        case authFileSync
+    }
+
     // MARK: - Public API
 
-    /// Fetch usage for an account, automatically refreshing the token if expired.
     static func fetchUsageWithRefresh(for account: CodexAccount, previous: AccountUsage? = nil) async throws -> FetchResult {
         do {
             let usage = try await fetchUsage(for: account, previous: previous)
-            return FetchResult(usage: usage, updatedAccount: nil)
+            let updated = markUsageSuccess(for: account)
+            return FetchResult(usage: usage, updatedAccount: updated)
         } catch APIError.unauthorized {
-            // Token expired — try refreshing
             let refreshed = try await refreshToken(for: account)
             let usage = try await fetchUsage(for: refreshed, previous: previous)
-            return FetchResult(usage: usage, updatedAccount: refreshed)
+            let updated = markUsageSuccess(for: refreshed)
+            return FetchResult(usage: usage, updatedAccount: updated)
         }
     }
 
-    /// Fetch usage data for a single account.
+    static func auditSession(
+        for account: CodexAccount,
+        trigger: AuditTrigger,
+        maxTokenAge: TimeInterval,
+        staleAfter: TimeInterval,
+        now: Date = Date()
+    ) async throws -> AuditResult {
+        var candidate = markStaleIfNeeded(for: account, staleAfter: staleAfter, now: now)
+        let refreshBaseline = candidate.lastSuccessfulTokenRefreshAt ?? candidate.lastTokenRefresh ?? candidate.addedAt
+        let shouldRefresh = trigger == .manualRefresh
+            || candidate.authState == .stale
+            || now.timeIntervalSince(refreshBaseline) >= maxTokenAge
+
+        guard shouldRefresh else {
+            if candidate.authState == .degraded,
+               let failureAt = candidate.lastRefreshFailureAt,
+               now.timeIntervalSince(failureAt) < staleAfter
+            {
+                return AuditResult(account: candidate, didRefresh: false)
+            }
+
+            candidate.authState = .healthy
+            return AuditResult(account: candidate, didRefresh: false)
+        }
+
+        let refreshed = try await refreshToken(for: candidate, now: now)
+        return AuditResult(account: refreshed, didRefresh: true)
+    }
+
+    static func markUsageSuccess(for account: CodexAccount, now: Date = Date()) -> CodexAccount {
+        var updated = account
+        updated.lastSuccessfulUsageAt = now
+        updated.authState = .healthy
+        return updated
+    }
+
+    static func markRefreshFailure(
+        for account: CodexAccount,
+        error: APIError,
+        now: Date = Date()
+    ) -> CodexAccount {
+        var updated = account
+        updated.lastRefreshAttemptAt = now
+        updated.lastRefreshFailureAt = now
+
+        switch error {
+        case .unauthorized:
+            updated.authState = .needsReauth
+        default:
+            updated.consecutiveRefreshFailures += 1
+            updated.authState = .degraded
+        }
+
+        return updated
+    }
+
+    static func markStaleIfNeeded(
+        for account: CodexAccount,
+        staleAfter: TimeInterval,
+        now: Date = Date()
+    ) -> CodexAccount {
+        var updated = account
+        guard updated.authState != .needsReauth else { return updated }
+
+        let baseline = updated.lastAuthValidationAt ?? updated.addedAt
+        if now.timeIntervalSince(baseline) >= staleAfter {
+            updated.authState = .stale
+        }
+        return updated
+    }
+
+    // MARK: - Usage
+
     static func fetchUsage(for account: CodexAccount, previous: AccountUsage? = nil) async throws -> AccountUsage {
         guard let url = URL(string: usageURL) else {
             throw APIError.invalidResponse
@@ -130,11 +203,15 @@ enum CodexAPIService {
         }
     }
 
-    /// Refresh OAuth tokens using the refresh_token.
-    static func refreshToken(for account: CodexAccount) async throws -> CodexAccount {
+    // MARK: - Refresh
+
+    static func refreshToken(for account: CodexAccount, now: Date = Date()) async throws -> CodexAccount {
         guard !account.refreshToken.isEmpty else {
             throw APIError.unauthorized
         }
+
+        var requestAccount = account
+        requestAccount.lastRefreshAttemptAt = now
 
         guard let url = URL(string: refreshEndpoint) else {
             throw APIError.invalidResponse
@@ -148,7 +225,7 @@ enum CodexAPIService {
         let body: [String: String] = [
             "client_id": clientID,
             "grant_type": "refresh_token",
-            "refresh_token": account.refreshToken,
+            "refresh_token": requestAccount.refreshToken,
             "scope": "openid profile email",
         ]
         request.httpBody = try JSONSerialization.data(withJSONObject: body)
@@ -165,7 +242,7 @@ enum CodexAPIService {
             throw APIError.invalidResponse
         }
 
-        if http.statusCode == 401 {
+        if http.statusCode == 401 || http.statusCode == 403 {
             throw APIError.unauthorized
         }
 
@@ -176,23 +253,26 @@ enum CodexAPIService {
 
         let tokenResponse = try JSONDecoder().decode(TokenRefreshResponse.self, from: data)
 
-        var updated = account
+        var updated = requestAccount
         if let newAccess = tokenResponse.accessToken, !newAccess.isEmpty {
             updated.accessToken = newAccess
         }
         if let newRefresh = tokenResponse.refreshToken, !newRefresh.isEmpty {
             updated.refreshToken = newRefresh
         }
-        if let newId = tokenResponse.idToken, !newId.isEmpty {
-            updated.idToken = newId
+        if let newID = tokenResponse.idToken, !newID.isEmpty {
+            updated.idToken = newID
         }
-        updated.lastTokenRefresh = Date()
+        updated.lastTokenRefresh = now
+        updated.lastSuccessfulTokenRefreshAt = now
+        updated.lastRefreshFailureAt = nil
+        updated.consecutiveRefreshFailures = 0
+        updated.authState = .healthy
         return updated
     }
 
     // MARK: - Auth File Reading
 
-    /// Read the current auth.json and parse it into a CodexAccount.
     static func readAuthFile() -> CodexAccount? {
         let codexHome = ProcessInfo.processInfo.environment["CODEX_HOME"]
             ?? "\(NSHomeDirectory())/.codex"
@@ -205,13 +285,11 @@ enum CodexAPIService {
               let refreshToken = tokens.refreshToken, !refreshToken.isEmpty
         else { return nil }
 
-        // Parse identity from id_token first, then access_token
         let tokenToParse = tokens.idToken ?? accessToken
         guard let claims = JWTParser.parse(tokenToParse),
               let email = claims.email
         else { return nil }
 
-        // Parse last_refresh date
         var lastRefresh: Date?
         if let lr = auth.lastRefresh {
             let fmt = ISO8601DateFormatter()
@@ -230,7 +308,9 @@ enum CodexAPIService {
             refreshToken: refreshToken,
             idToken: tokens.idToken,
             accountId: tokens.accountId ?? claims.accountId,
-            lastTokenRefresh: lastRefresh
+            lastTokenRefresh: lastRefresh,
+            lastSuccessfulTokenRefreshAt: lastRefresh,
+            authState: .healthy
         )
     }
 }

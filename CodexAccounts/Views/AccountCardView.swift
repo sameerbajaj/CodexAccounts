@@ -42,11 +42,11 @@ struct AccountCardView: View {
                     .padding(.top, 11)
                     .padding(.horizontal, 12)
 
-                if case .needsReauth = status {
-                    reauthRow
-                        .padding(.horizontal, 12)
-                        .padding(.bottom, 11)
-                } else if let usage {
+                stateRow
+                    .padding(.horizontal, 12)
+                    .padding(.top, 8)
+
+                if let usage {
                     usageRows(usage)
                         .padding(.horizontal, 12)
                         .padding(.bottom, isTestingMessage || testResult != nil ? 0 : 11)
@@ -117,6 +117,8 @@ struct AccountCardView: View {
 
             PlanBadge(plan: account.planType)
 
+            authBadge
+
             contextMenu
                 .opacity(isHovering ? 1 : 0)
         }
@@ -157,6 +159,19 @@ struct AccountCardView: View {
         .fixedSize()
     }
 
+    private var authBadge: some View {
+        Text(account.authState.displayName)
+            .font(.system(size: 8.5, weight: .bold, design: .rounded))
+            .foregroundStyle(authBadgeTextColor)
+            .padding(.horizontal, 6)
+            .padding(.vertical, 3)
+            .background(Capsule().fill(authBadgeColor.opacity(0.18)))
+            .overlay(
+                Capsule()
+                    .stroke(authBadgeColor.opacity(0.35), lineWidth: 0.7)
+            )
+    }
+
     // MARK: - Usage Rows
 
     @ViewBuilder
@@ -181,7 +196,7 @@ struct AccountCardView: View {
                 .foregroundStyle(percentColor(for: usage.remainingPercent))
                 .frame(width: 44, alignment: .trailing)
         }
-        .padding(.top, 8)
+        .padding(.top, 7)
 
         // Reset + meta row
         HStack(spacing: 0) {
@@ -231,24 +246,25 @@ struct AccountCardView: View {
 
     // MARK: - Reauth Row
 
-    private var reauthRow: some View {
+    private var stateRow: some View {
         HStack(spacing: 6) {
-            Image(systemName: "exclamationmark.triangle.fill")
+            Image(systemName: stateIconName)
                 .font(.system(size: 10))
-                .foregroundStyle(.orange)
-            Text("Session expired")
+                .foregroundStyle(stateColor)
+            Text(stateText)
                 .font(.system(size: 11))
                 .foregroundStyle(Color.white.opacity(0.85))
             Spacer()
-            Button(action: onReauth) {
-                Text("Re-authenticate")
-                    .font(.system(size: 10, weight: .medium))
+            if case .needsReauth = status {
+                Button(action: onReauth) {
+                    Text("Re-authenticate")
+                        .font(.system(size: 10, weight: .medium))
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(.orange)
+                .controlSize(.mini)
             }
-            .buttonStyle(.borderedProminent)
-            .tint(.orange)
-            .controlSize(.mini)
         }
-        .padding(.top, 8)
     }
 
     // MARK: - Loading Row
@@ -313,9 +329,24 @@ struct AccountCardView: View {
             else if r > 15 { return .orange }
             else { return .red }
         case .refreshing: return Color(red: 0.3, green: 0.55, blue: 1.0)
+        case .stale: return .yellow
+        case .degraded: return .orange
         case .needsReauth: return .orange
         case .error: return .red
         }
+    }
+
+    private var authBadgeColor: Color {
+        switch account.authState {
+        case .healthy: return .green
+        case .stale: return .yellow
+        case .degraded: return .orange
+        case .needsReauth: return .red
+        }
+    }
+
+    private var authBadgeTextColor: Color {
+        account.authState == .healthy ? Color.green.opacity(0.95) : authBadgeColor.opacity(0.95)
     }
 
     private var cardBackground: some View {
@@ -359,6 +390,54 @@ struct AccountCardView: View {
         if remaining > 40 { return Color(red: 0.30, green: 0.90, blue: 0.55) }
         else if remaining > 15 { return Color(red: 1.0, green: 0.72, blue: 0.20) }
         else { return Color(red: 1.0, green: 0.40, blue: 0.40) }
+    }
+
+    private var stateIconName: String {
+        switch status {
+        case .active: return "checkmark.circle.fill"
+        case .refreshing: return "arrow.triangle.2.circlepath.circle.fill"
+        case .stale: return "clock.badge.exclamationmark"
+        case .degraded: return "exclamationmark.circle.fill"
+        case .needsReauth: return "exclamationmark.triangle.fill"
+        case .error: return "xmark.octagon.fill"
+        }
+    }
+
+    private var stateColor: Color {
+        switch status {
+        case .active: return .green
+        case .refreshing: return Color(red: 0.3, green: 0.55, blue: 1.0)
+        case .stale: return .yellow
+        case .degraded: return .orange
+        case .needsReauth: return .orange
+        case .error: return .red
+        }
+    }
+
+    private var stateText: String {
+        switch status {
+        case .active:
+            if let date = account.lastAuthValidationAt {
+                return "Auth OK \(date.relativeDescription)"
+            }
+            return "Auth OK"
+        case .refreshing:
+            return "Refreshing session"
+        case .stale:
+            if let date = account.lastAuthValidationAt {
+                return "Auth stale since \(date.relativeDescription)"
+            }
+            return "Auth stale"
+        case .degraded:
+            if let date = account.lastRefreshFailureAt {
+                return "Refresh failing \(date.relativeDescription)"
+            }
+            return "Refresh failing"
+        case .needsReauth:
+            return "Session expired"
+        case let .error(message):
+            return message
+        }
     }
 }
 
