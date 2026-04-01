@@ -527,7 +527,42 @@ struct MenuBarPopover: View {
                         .font(.system(size: 10.5, weight: .medium))
                         .foregroundStyle(Color.white.opacity(0.80))
                         .padding(.horizontal, 14)
-                        .padding(.bottom, 10)
+                        .padding(.bottom, viewModel.availableUpdate != nil ? 6 : 10)
+                }
+
+                if let update = viewModel.availableUpdate, viewModel.selfUpdateState == .idle {
+                    HStack(spacing: 10) {
+                        Image(systemName: "arrow.down.circle.fill")
+                            .font(.system(size: 13))
+                            .foregroundStyle(.green)
+                        Text(update.isRolling ? "New build available" : "v\(update.version) available")
+                            .font(.system(size: 11, weight: .semibold))
+                            .foregroundStyle(.white)
+                        Spacer()
+                        if update.downloadURL != nil {
+                            Button { viewModel.installUpdate() } label: {
+                                Text("Install")
+                                    .font(.system(size: 10, weight: .semibold))
+                                    .foregroundStyle(.black)
+                                    .padding(.horizontal, 11)
+                                    .padding(.vertical, 5)
+                                    .background(Capsule().fill(Color.green))
+                            }
+                            .buttonStyle(.plain)
+                        } else {
+                            Button { NSWorkspace.shared.open(update.releaseURL) } label: {
+                                Text("Download")
+                                    .font(.system(size: 10, weight: .semibold))
+                                    .foregroundStyle(.black)
+                                    .padding(.horizontal, 11)
+                                    .padding(.vertical, 5)
+                                    .background(Capsule().fill(Color.green))
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                    .padding(.horizontal, 14)
+                    .padding(.bottom, 10)
                 }
             }
         }
@@ -609,15 +644,6 @@ struct MenuBarPopover: View {
 
     private var footer: some View {
         VStack(spacing: 6) {
-            if let lastAudit = viewModel.lastSessionAuditAt {
-                HStack {
-                    Text("Last auth audit \(lastAudit.relativeDescription)")
-                        .font(.system(size: 9.5))
-                        .foregroundStyle(Color.white.opacity(0.55))
-                    Spacer()
-                }
-            }
-
             HStack {
                 Button(action: { viewModel.startAddingAccount() }) {
                     HStack(spacing: 5) {

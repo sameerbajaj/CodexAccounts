@@ -22,6 +22,11 @@ struct AccountCardView: View {
 
     @State private var isHovering = false
 
+    private var showStateRow: Bool {
+        if case .active = status, account.authState == .healthy { return false }
+        return true
+    }
+
     var body: some View {
         HStack(spacing: 0) {
             // Left accent bar
@@ -42,9 +47,11 @@ struct AccountCardView: View {
                     .padding(.top, 11)
                     .padding(.horizontal, 12)
 
-                stateRow
-                    .padding(.horizontal, 12)
-                    .padding(.top, 8)
+                if showStateRow {
+                    stateRow
+                        .padding(.horizontal, 12)
+                        .padding(.top, 8)
+                }
 
                 if let usage {
                     usageRows(usage)
@@ -117,7 +124,9 @@ struct AccountCardView: View {
 
             PlanBadge(plan: account.planType)
 
-            authBadge
+            if account.authState != .healthy {
+                authBadge
+            }
 
             contextMenu
                 .opacity(isHovering ? 1 : 0)
