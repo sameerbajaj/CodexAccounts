@@ -10,6 +10,7 @@ import SwiftUI
 struct AccountCardView: View {
     let account: CodexAccount
     let usage: AccountUsage?
+    let usageDetailMode: AccountsViewModel.UsageDetailMode
     let status: AccountStatus
     let onRefresh: () -> Void
     let onRemove: () -> Void
@@ -193,17 +194,24 @@ struct AccountCardView: View {
                         .fill(Color.white.opacity(0.10))
                     RoundedRectangle(cornerRadius: 4.5)
                         .fill(barGradient(for: usage.remainingPercent))
-                        .frame(width: max(0, proxy.size.width * CGFloat(min(100, max(0, usage.remainingPercent)) / 100)))
+                        .frame(width: max(0, proxy.size.width * CGFloat(clampedPercent(usage.remainingPercent) / 100)))
                         .shadow(color: barGlowColor(for: usage.remainingPercent), radius: 4, y: 0)
                         .animation(.spring(duration: 0.5), value: usage.remainingPercent)
                 }
             }
             .frame(height: 9)
 
-            Text("\(Int(min(100, max(0, usage.remainingPercent))))%")
-                .font(.system(size: 14, weight: .bold, design: .monospaced))
-                .foregroundStyle(percentColor(for: usage.remainingPercent))
-                .frame(width: 44, alignment: .trailing)
+            VStack(alignment: .trailing, spacing: 1) {
+                Text("\(Int(clampedPercent(usage.remainingPercent)))%")
+                    .font(.system(size: 14, weight: .bold, design: .monospaced))
+                    .foregroundStyle(percentColor(for: usage.remainingPercent))
+                if usage.isWeeklyPrimary {
+                    Text("Weekly")
+                        .font(.system(size: 8, weight: .semibold))
+                        .foregroundStyle(Color.white.opacity(0.62))
+                }
+            }
+            .frame(width: usage.isWeeklyPrimary ? 52 : 44, alignment: .trailing)
         }
         .padding(.top, 7)
 
@@ -213,7 +221,7 @@ struct AccountCardView: View {
                 HStack(spacing: 3) {
                     Image(systemName: "arrow.clockwise")
                         .font(.system(size: 8))
-                    Text("Resets \(resetAt.resetDescription)")
+                    Text("\(usage.isWeeklyPrimary ? "Weekly resets" : "Resets") \(resetAt.resetDescription)")
                         .font(.system(size: 10))
                 }
                 .foregroundStyle(Color.white.opacity(0.75))
@@ -239,6 +247,11 @@ struct AccountCardView: View {
         }
         .padding(.top, 5)
 
+        if let weeklyRemaining = usage.weeklyRemainingPercent, !usage.isWeeklyPrimary {
+            weeklyUsageRow(weeklyRemaining: weeklyRemaining, weeklyResetAt: usage.weeklyResetAt)
+                .padding(.top, 5)
+        }
+
         if let error = usage.error {
             HStack(spacing: 4) {
                 Image(systemName: "exclamationmark.triangle.fill")
@@ -250,6 +263,54 @@ struct AccountCardView: View {
                     .lineLimit(2)
             }
             .padding(.top, 4)
+        }
+    }
+
+    @ViewBuilder
+    private func weeklyUsageRow(weeklyRemaining: Double, weeklyResetAt: Date?) -> some View {
+        switch usageDetailMode {
+        case .compact:
+            HStack(spacing: 4) {
+                Text("Weekly \(Int(clampedPercent(weeklyRemaining)))% left")
+                    .font(.system(size: 9.5, weight: .medium))
+                    .foregroundStyle(Color.white.opacity(0.70))
+                if let weeklyResetAt {
+                    Text("| resets \(weeklyResetAt.resetDescription)")
+                        .font(.system(size: 9.5))
+                        .foregroundStyle(Color.white.opacity(0.58))
+                }
+                Spacer()
+            }
+        case .detailed:
+            VStack(alignment: .leading, spacing: 4) {
+                HStack(spacing: 6) {
+                    Text("Weekly")
+                        .font(.system(size: 8.5, weight: .bold))
+                        .textCase(.uppercase)
+                        .foregroundStyle(Color.white.opacity(0.60))
+                    Spacer()
+                    Text("\(Int(clampedPercent(weeklyRemaining)))% left")
+                        .font(.system(size: 9.5, weight: .semibold))
+                        .foregroundStyle(Color.white.opacity(0.76))
+                }
+
+                GeometryReader { proxy in
+                    ZStack(alignment: .leading) {
+                        RoundedRectangle(cornerRadius: 3.5)
+                            .fill(Color.white.opacity(0.09))
+                        RoundedRectangle(cornerRadius: 3.5)
+                            .fill(Color.white.opacity(0.42))
+                            .frame(width: max(0, proxy.size.width * CGFloat(clampedPercent(weeklyRemaining) / 100)))
+                    }
+                }
+                .frame(height: 6)
+
+                if let weeklyResetAt {
+                    Text("Resets \(weeklyResetAt.resetDescription)")
+                        .font(.system(size: 9))
+                        .foregroundStyle(Color.white.opacity(0.58))
+                }
+            }
         }
     }
 
@@ -399,6 +460,10 @@ struct AccountCardView: View {
         if remaining > 40 { return Color(red: 0.30, green: 0.90, blue: 0.55) }
         else if remaining > 15 { return Color(red: 1.0, green: 0.72, blue: 0.20) }
         else { return Color(red: 1.0, green: 0.40, blue: 0.40) }
+    }
+
+    private func clampedPercent(_ value: Double) -> Double {
+        min(100, max(0, value))
     }
 
     private var stateIconName: String {

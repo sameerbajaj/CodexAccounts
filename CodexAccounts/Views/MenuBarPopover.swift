@@ -288,6 +288,7 @@ struct MenuBarPopover: View {
                     AccountCardView(
                         account: account,
                         usage: viewModel.usageData[account.id],
+                        usageDetailMode: viewModel.usageDetailMode,
                         status: viewModel.accountStatuses[account.id] ?? .active,
                         onRefresh: { Task { await viewModel.refreshAccount(account) } },
                         onRemove: { viewModel.removeAccount(account) },
@@ -473,6 +474,21 @@ struct MenuBarPopover: View {
                         isSelected: viewModel.refreshInterval == interval
                     ) {
                         viewModel.refreshInterval = interval
+                    }
+                }
+            }
+
+            Divider().background(Color.white.opacity(0.12)).padding(.horizontal, 14)
+
+            settingsSection(title: "Usage Cards") {
+                ForEach(AccountsViewModel.UsageDetailMode.allCases) { mode in
+                    settingsRow(
+                        icon: mode.icon,
+                        label: mode.rawValue,
+                        description: mode.description,
+                        isSelected: viewModel.usageDetailMode == mode
+                    ) {
+                        viewModel.usageDetailMode = mode
                     }
                 }
             }

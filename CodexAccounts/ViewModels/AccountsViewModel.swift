@@ -45,6 +45,9 @@ final class AccountsViewModel {
             restartAutoRefresh()
         }
     }
+    var usageDetailMode: UsageDetailMode = .compact {
+        didSet { UserDefaults.standard.set(usageDetailMode.rawValue, forKey: "usageDetailMode") }
+    }
     var autoCheckUpdatesOnLaunch: Bool = true {
         didSet { UserDefaults.standard.set(autoCheckUpdatesOnLaunch, forKey: "autoCheckUpdatesOnLaunch") }
     }
@@ -132,6 +135,27 @@ final class AccountsViewModel {
         }
     }
 
+    enum UsageDetailMode: String, CaseIterable, Identifiable {
+        case compact = "Compact"
+        case detailed = "Detailed"
+
+        var id: String { rawValue }
+
+        var icon: String {
+            switch self {
+            case .compact: return "text.alignleft"
+            case .detailed: return "chart.bar.xaxis"
+            }
+        }
+
+        var description: String {
+            switch self {
+            case .compact: return "Primary bar + concise weekly line"
+            case .detailed: return "Adds a mini weekly meter and extra context"
+            }
+        }
+    }
+
     // MARK: - Private
 
     private var hasSetup = false
@@ -159,6 +183,10 @@ final class AccountsViewModel {
         if let raw = UserDefaults.standard.string(forKey: "refreshInterval"),
            let interval = RefreshInterval(rawValue: raw) {
             refreshInterval = interval
+        }
+        if let raw = UserDefaults.standard.string(forKey: "usageDetailMode"),
+           let mode = UsageDetailMode(rawValue: raw) {
+            usageDetailMode = mode
         }
         if let raw = UserDefaults.standard.string(forKey: "sortMode"),
            let mode = SortMode(rawValue: raw) {

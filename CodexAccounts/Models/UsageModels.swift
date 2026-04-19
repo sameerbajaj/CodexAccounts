@@ -118,10 +118,65 @@ struct AuthFileContents: Decodable {
 
 extension AccountUsage {
     init(from response: CodexUsageResponse, previous: AccountUsage? = nil) {
-        let primary = response.rateLimit?.primaryWindow
+        struct ParsedWindow {
+            let usedPercent: Double
+            let resetAt: Date
+            let limitWindowSeconds: Int
+        }
 
-        self.usedPercent = Double(primary?.usedPercent ?? 0)
-        self.resetAt = primary.map { Date(timeIntervalSince1970: TimeInterval($0.resetAt)) }
+        let snapshots = [
+            response.rateLimit?.primaryWindow,
+            response.rateLimit?.secondaryWindow,
+        ]
+        .compactMap { $0 }
+
+        let windows = snapshots.map { snapshot in
+            ParsedWindow(
+                usedPercent: Double(snapshot.usedPercent),
+                resetAt: Date(timeIntervalSince1970: TimeInterval(snapshot.resetAt)),
+                limitWindowSeconds: max(0, snapshot.limitWindowSeconds)
+            )
+        }
+
+        let sortedByDuration = windows.sorted { $0.limitWindowSeconds < $1.limitWindowSeconds }
+        let shortWindow: ParsedWindow?
+        let weeklyWindow: ParsedWindow?
+
+        if sortedByDuration.count >= 2 {
+            let shortest = sortedByDuration.first
+            let longest = sortedByDuration.last
+            if let longest, longest.limitWindowSeconds >= AccountUsage.weeklyWindowThresholdSeconds {
+                if let shortest, shortest.limitWindowSeconds < AccountUsage.weeklyWindowThresholdSeconds {
+                    shortWindow = shortest
+                } else {
+                    shortWindow = nil
+                }
+                weeklyWindow = longest
+            } else {
+                shortWindow = shortest
+                weeklyWindow = nil
+            }
+        } else if let onlyWindow = sortedByDuration.first {
+            if onlyWindow.limitWindowSeconds >= AccountUsage.weeklyWindowThresholdSeconds {
+                shortWindow = nil
+                weeklyWindow = onlyWindow
+            } else {
+                shortWindow = onlyWindow
+                weeklyWindow = nil
+            }
+        } else {
+            shortWindow = nil
+            weeklyWindow = nil
+        }
+
+        let primaryDisplayWindow = shortWindow ?? weeklyWindow
+
+        self.usedPercent = primaryDisplayWindow?.usedPercent ?? 0
+        self.resetAt = primaryDisplayWindow?.resetAt
+        self.primaryWindowSeconds = primaryDisplayWindow?.limitWindowSeconds
+        self.weeklyUsedPercent = weeklyWindow?.usedPercent
+        self.weeklyResetAt = weeklyWindow?.resetAt
+        self.weeklyWindowSeconds = weeklyWindow?.limitWindowSeconds
         self.creditsBalance = response.credits?.balance
         self.hasCredits = response.credits?.hasCredits ?? false
         self.isUnlimited = response.credits?.unlimited ?? false

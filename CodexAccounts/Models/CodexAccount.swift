@@ -130,9 +130,15 @@ struct CodexAccount: Identifiable, Codable, Hashable {
 }
 
 struct AccountUsage: Equatable {
-    /// Codex usage (primary rate-limit window) — the only bar we show
+    static let weeklyWindowThresholdSeconds = 3 * 24 * 60 * 60
+
+    /// Codex usage shown in the primary bar (short window when available, otherwise weekly)
     var usedPercent: Double
     var resetAt: Date?
+    var primaryWindowSeconds: Int?
+    var weeklyUsedPercent: Double?
+    var weeklyResetAt: Date?
+    var weeklyWindowSeconds: Int?
     var creditsBalance: Double?
     var hasCredits: Bool
     var isUnlimited: Bool
@@ -145,12 +151,36 @@ struct AccountUsage: Equatable {
         max(0, 100 - usedPercent)
     }
 
+    var weeklyRemainingPercent: Double? {
+        guard let weeklyUsedPercent else { return nil }
+        return max(0, 100 - weeklyUsedPercent)
+    }
+
+    var hasWeeklyWindow: Bool {
+        weeklyUsedPercent != nil
+    }
+
+    var isWeeklyPrimary: Bool {
+        guard hasWeeklyWindow else { return false }
+        if let primaryWindowSeconds {
+            return primaryWindowSeconds >= Self.weeklyWindowThresholdSeconds
+        }
+        if let weeklyResetAt {
+            return resetAt == weeklyResetAt
+        }
+        return false
+    }
+
     /// Alias kept so existing references compile
     var lowestRemainingPercent: Double { remainingPercent }
 
     static let placeholder = AccountUsage(
         usedPercent: 0,
         resetAt: nil,
+        primaryWindowSeconds: nil,
+        weeklyUsedPercent: nil,
+        weeklyResetAt: nil,
+        weeklyWindowSeconds: nil,
         creditsBalance: nil,
         hasCredits: false,
         isUnlimited: false,
