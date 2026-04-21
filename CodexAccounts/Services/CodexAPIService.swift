@@ -195,11 +195,12 @@ enum CodexAPIService {
             } catch {
                 throw APIError.invalidResponse
             }
-        case 401, 403:
+        case 401:
             throw APIError.unauthorized
+        case 403:
+            throw APIError.serverError(http.statusCode, responseErrorText(from: data))
         default:
-            let body = String(data: data, encoding: .utf8)
-            throw APIError.serverError(http.statusCode, body)
+            throw APIError.serverError(http.statusCode, responseErrorText(from: data))
         }
     }
 
@@ -220,15 +221,13 @@ enum CodexAPIService {
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.timeoutInterval = 30
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
 
-        let body: [String: String] = [
-            "client_id": clientID,
-            "grant_type": "refresh_token",
-            "refresh_token": requestAccount.refreshToken,
-            "scope": "openid profile email",
-        ]
-        request.httpBody = try JSONSerialization.data(withJSONObject: body)
+        request.httpBody = percentEncodedFormBody([
+            ("client_id", clientID),
+            ("grant_type", "refresh_token"),
+            ("refresh_token", requestAccount.refreshToken),
+        ])
 
         let data: Data
         let response: URLResponse
@@ -242,13 +241,12 @@ enum CodexAPIService {
             throw APIError.invalidResponse
         }
 
-        if http.statusCode == 401 || http.statusCode == 403 {
-            throw APIError.unauthorized
-        }
-
         guard http.statusCode == 200 else {
-            let body = String(data: data, encoding: .utf8)
-            throw APIError.serverError(http.statusCode, body)
+            let errorBody = responseErrorText(from: data)
+            if isUnauthorizedRefreshResponse(statusCode: http.statusCode, errorBody: errorBody) {
+                throw APIError.unauthorized
+            }
+            throw APIError.serverError(http.statusCode, errorBody)
         }
 
         let tokenResponse = try JSONDecoder().decode(TokenRefreshResponse.self, from: data)
@@ -269,6 +267,77 @@ enum CodexAPIService {
         updated.consecutiveRefreshFailures = 0
         updated.authState = .healthy
         return updated
+    }
+
+    private static func responseErrorText(from data: Data) -> String? {
+        guard !data.isEmpty else { return nil }
+
+        if let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+            if let nested = json["error"] as? [String: Any] {
+                let code = nested["code"] as? String
+                let message = (nested["message"] as? String)?
+                    .trimmingCharacters(in: .whitespacesAndNewlines)
+                if let code, let message, !message.isEmpty {
+                    return "\(code): \(message)"
+                }
+                if let message, !message.isEmpty {
+                    return message
+                }
+            }
+
+            let code = (json["error"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
+            let description = (json["error_description"] as? String)?
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            let message = (json["message"] as? String)?
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+
+            if let code, let description, !description.isEmpty {
+                return "\(code): \(description)"
+            }
+            if let description, !description.isEmpty {
+                return description
+            }
+            if let message, !message.isEmpty {
+                return message
+            }
+            if let code, !code.isEmpty {
+                return code
+            }
+        }
+
+        let raw = String(data: data, encoding: .utf8)?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        if let raw, !raw.isEmpty {
+            return raw
+        }
+        return nil
+    }
+
+    private static func isUnauthorizedRefreshResponse(statusCode: Int, errorBody: String?) -> Bool {
+        if statusCode == 401 || statusCode == 403 {
+            return true
+        }
+        guard statusCode == 400 else { return false }
+
+        let normalized = (errorBody ?? "").lowercased()
+        if normalized.contains("invalid_grant") {
+            return true
+        }
+        if normalized.contains("token expired") {
+            return true
+        }
+        if normalized.contains("refresh token"),
+           normalized.contains("expired") || normalized.contains("invalid") || normalized.contains("revoked")
+        {
+            return true
+        }
+        return false
+    }
+
+    private static func percentEncodedFormBody(_ fields: [(String, String)]) -> Data? {
+        var components = URLComponents()
+        components.queryItems = fields.map { URLQueryItem(name: $0.0, value: $0.1) }
+        return components.percentEncodedQuery?.data(using: .utf8)
     }
 
     // MARK: - Auth File Reading
