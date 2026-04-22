@@ -548,18 +548,66 @@ final class AccountsViewModel {
             return authAccount
         }
 
-        accounts[idx].accessToken = authAccount.accessToken
-        accounts[idx].refreshToken = authAccount.refreshToken
-        accounts[idx].idToken = authAccount.idToken
-        accounts[idx].planType = authAccount.planType
-        accounts[idx].accountId = authAccount.accountId
-        accounts[idx].lastTokenRefresh = authAccount.lastTokenRefresh
-        accounts[idx].lastSuccessfulTokenRefreshAt = authAccount.lastSuccessfulTokenRefreshAt ?? accounts[idx].lastSuccessfulTokenRefreshAt
-        if accounts[idx].authState != .needsReauth {
-            accounts[idx].authState = .healthy
+        var existing = accounts[idx]
+        let snapshotIsNewer = shouldApplyAuthSnapshot(authAccount, over: existing)
+
+        if authAccount.planType.lowercased() != "unknown" {
+            existing.planType = authAccount.planType
         }
+        if let accountId = authAccount.accountId, !accountId.isEmpty {
+            existing.accountId = accountId
+        }
+
+        if snapshotIsNewer {
+            let tokensChanged = authAccount.accessToken != existing.accessToken
+                || authAccount.refreshToken != existing.refreshToken
+                || authAccount.idToken != existing.idToken
+
+            existing.accessToken = authAccount.accessToken
+            existing.refreshToken = authAccount.refreshToken
+            existing.idToken = authAccount.idToken
+            existing.lastTokenRefresh = authAccount.lastTokenRefresh ?? existing.lastTokenRefresh
+            existing.lastSuccessfulTokenRefreshAt = authAccount.lastSuccessfulTokenRefreshAt
+                ?? authAccount.lastTokenRefresh
+                ?? existing.lastSuccessfulTokenRefreshAt
+
+            if tokensChanged || existing.authState == .needsReauth {
+                existing.authState = .healthy
+                existing.lastRefreshFailureAt = nil
+                existing.consecutiveRefreshFailures = 0
+            }
+        }
+
+        accounts[idx] = existing
         persistAccounts()
-        return accounts[idx]
+        return existing
+    }
+
+    private func shouldApplyAuthSnapshot(_ snapshot: CodexAccount, over existing: CodexAccount) -> Bool {
+        if existing.accessToken.isEmpty || existing.refreshToken.isEmpty {
+            return true
+        }
+
+        let tokensChanged = snapshot.accessToken != existing.accessToken
+            || snapshot.refreshToken != existing.refreshToken
+            || snapshot.idToken != existing.idToken
+
+        let snapshotRefreshAt = snapshot.lastSuccessfulTokenRefreshAt ?? snapshot.lastTokenRefresh
+        let existingRefreshAt = existing.lastSuccessfulTokenRefreshAt ?? existing.lastTokenRefresh
+
+        switch (snapshotRefreshAt, existingRefreshAt) {
+        case let (snapshotDate?, existingDate?):
+            if snapshotDate >= existingDate {
+                return true
+            }
+            return existing.authState == .needsReauth && tokensChanged
+        case (_?, nil):
+            return true
+        case (nil, _?):
+            return existing.authState == .needsReauth && tokensChanged
+        case (nil, nil):
+            return existing.authState == .needsReauth && tokensChanged
+        }
     }
 
     // MARK: - Untracked Account Detection
