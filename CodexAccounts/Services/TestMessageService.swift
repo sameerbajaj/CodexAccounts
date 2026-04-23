@@ -27,7 +27,7 @@ enum TestMessageService {
     private static let fallbackResponsesURL = "https://chatgpt.com/backend-api/responses"
 
     static func send(account: CodexAccount) async -> TestMessageResult {
-        await sendViaCLI(account: account)
+        await sendViaAPI(account: account)
     }
 
     private static func sendViaCLI(account: CodexAccount) async -> TestMessageResult {

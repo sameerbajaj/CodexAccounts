@@ -327,14 +327,14 @@ final class AccountsViewModel {
             )
             accountForUsage = mergeAccount(audit.account)
         } catch let error as CodexAPIService.APIError {
-            let failed = CodexAPIService.markRefreshFailure(for: accountForUsage, error: error)
-            accountForUsage = mergeAccount(failed)
-
-            if error == .unauthorized {
-                setUsageError("Token expired. Please re-authenticate.", for: account.id)
-                accountStatuses[account.id] = .needsReauth
-                return
+            let failedError: CodexAPIService.APIError = if error == .unauthorized {
+                .networkError("Refresh token rejected")
+            } else {
+                error
             }
+
+            let failed = CodexAPIService.markRefreshFailure(for: accountForUsage, error: failedError)
+            accountForUsage = mergeAccount(failed)
         } catch {
             let failed = CodexAPIService.markRefreshFailure(
                 for: accountForUsage,
@@ -404,11 +404,13 @@ final class AccountsViewModel {
                 let merged = mergeAccount(result.account)
                 accountStatuses[account.id] = status(for: merged)
             } catch let error as CodexAPIService.APIError {
-                let failed = CodexAPIService.markRefreshFailure(for: current, error: error)
-                let merged = mergeAccount(failed)
-                if error == .unauthorized {
-                    setUsageError("Token expired. Please re-authenticate.", for: account.id)
+                let failedError: CodexAPIService.APIError = if error == .unauthorized {
+                    .networkError("Refresh token rejected")
+                } else {
+                    error
                 }
+                let failed = CodexAPIService.markRefreshFailure(for: current, error: failedError)
+                let merged = mergeAccount(failed)
                 accountStatuses[account.id] = status(for: merged)
             } catch {
                 let failed = CodexAPIService.markRefreshFailure(
