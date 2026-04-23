@@ -280,8 +280,10 @@ final class AccountsViewModel {
         startAutoRefresh()
         startTokenAudit()
 
-        Task { await auditAllSessions(trigger: .startup) }
-        Task { await refreshAll(trigger: .manualRefresh) }
+        Task {
+            await auditAllSessions(trigger: .startup)
+            await refreshAll(trigger: .manualRefresh)
+        }
 
         if autoCheckUpdatesOnLaunch {
             Task { await checkForUpdates(showUpToDateFeedback: false) }

@@ -11,6 +11,33 @@ enum CodexAPIService {
     private static let usageURL = "https://chatgpt.com/backend-api/wham/usage"
     private static let refreshEndpoint = "https://auth.openai.com/oauth/token"
     private static let clientID = "app_EMoamEEZ73f0CkXaXp7hrann"
+    private static let refreshCoordinator = RefreshCoordinator()
+
+    private actor RefreshCoordinator {
+        private var inFlightByAccountID: [String: Task<CodexAccount, Error>] = [:]
+
+        func refresh(
+            account: CodexAccount,
+            now: Date,
+            operation: @escaping (CodexAccount, Date) async throws -> CodexAccount
+        ) async throws -> CodexAccount {
+            if let existingTask = inFlightByAccountID[account.id] {
+                return try await existingTask.value
+            }
+
+            let task = Task { try await operation(account, now) }
+            inFlightByAccountID[account.id] = task
+
+            do {
+                let refreshed = try await task.value
+                inFlightByAccountID[account.id] = nil
+                return refreshed
+            } catch {
+                inFlightByAccountID[account.id] = nil
+                throw error
+            }
+        }
+    }
 
     // MARK: - Errors
 
@@ -211,6 +238,14 @@ enum CodexAPIService {
             throw APIError.unauthorized
         }
 
+        return try await refreshCoordinator.refresh(
+            account: account,
+            now: now,
+            operation: performTokenRefresh(for:now:)
+        )
+    }
+
+    private static func performTokenRefresh(for account: CodexAccount, now: Date) async throws -> CodexAccount {
         var requestAccount = account
         requestAccount.lastRefreshAttemptAt = now
 
@@ -260,6 +295,12 @@ enum CodexAPIService {
         }
         if let newID = tokenResponse.idToken, !newID.isEmpty {
             updated.idToken = newID
+        }
+        if let claims = JWTParser.parse(updated.idToken ?? updated.accessToken),
+           let refreshedAccountID = claims.accountId,
+           !refreshedAccountID.isEmpty
+        {
+            updated.accountId = refreshedAccountID
         }
         updated.lastTokenRefresh = now
         updated.lastSuccessfulTokenRefreshAt = now
