@@ -13,6 +13,7 @@ enum JWTParser {
         var planType: String?
         var accountId: String?
         var userId: String?
+        var expiresAt: Date?
     }
 
     static func parse(_ token: String) -> Claims? {
@@ -31,6 +32,12 @@ enum JWTParser {
         else { return nil }
 
         var claims = Claims()
+
+        if let exp = json["exp"] as? TimeInterval {
+            claims.expiresAt = Date(timeIntervalSince1970: exp)
+        } else if let exp = json["exp"] as? Int {
+            claims.expiresAt = Date(timeIntervalSince1970: TimeInterval(exp))
+        }
 
         // Extract email from top-level or profile namespace
         claims.email = json["email"] as? String

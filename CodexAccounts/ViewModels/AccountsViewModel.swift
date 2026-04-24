@@ -168,10 +168,12 @@ final class AccountsViewModel {
     private var activeRefreshCount = 0
     private var isAuditingSessions = false
 
-    private let tokenAuditInterval: TimeInterval = 600
-    private let tokenRefreshMaxAge: TimeInterval = 45 * 60
-    private let staleSessionThreshold: TimeInterval = 55 * 60
+    private let tokenAuditInterval: TimeInterval = 6 * 60 * 60
+    private let tokenRefreshMaxAge: TimeInterval = 7 * 24 * 60 * 60
+    private let tokenRefreshExpiryBuffer: TimeInterval = 24 * 60 * 60
+    private let staleSessionThreshold: TimeInterval = 24 * 60 * 60
     private let resumeAuditGapThreshold: TimeInterval = 20 * 60
+    private let importCodexHome = "\(NSHomeDirectory())/.codex-accounts-import"
 
     // MARK: - Init
 
@@ -252,6 +254,10 @@ final class AccountsViewModel {
         topAccountRemaining
     }
 
+    var addAccountCommand: String {
+        "CODEX_HOME=\"$HOME/.codex-accounts-import\" codex auth"
+    }
+
     var statusColor: Color {
         guard let val = menuBarRemaining ?? topAccountRemaining else { return .secondary }
         if val > 40 { return .green }
@@ -323,7 +329,8 @@ final class AccountsViewModel {
                 for: accountForUsage,
                 trigger: trigger,
                 maxTokenAge: tokenRefreshMaxAge,
-                staleAfter: staleSessionThreshold
+                staleAfter: staleSessionThreshold,
+                refreshBeforeExpiry: tokenRefreshExpiryBuffer
             )
             accountForUsage = mergeAccount(audit.account)
         } catch let error as CodexAPIService.APIError {
@@ -399,7 +406,8 @@ final class AccountsViewModel {
                     for: current,
                     trigger: trigger,
                     maxTokenAge: tokenRefreshMaxAge,
-                    staleAfter: staleSessionThreshold
+                    staleAfter: staleSessionThreshold,
+                    refreshBeforeExpiry: tokenRefreshExpiryBuffer
                 )
                 let merged = mergeAccount(result.account)
                 accountStatuses[account.id] = status(for: merged)
@@ -638,6 +646,7 @@ final class AccountsViewModel {
         showingAddAccount = true
         addAccountStatus = .watching
 
+        addAccountWatcher.codexHomeOverride = importCodexHome
         addAccountWatcher.onAuthFileChanged = { [weak self] in
             guard let self else { return }
             Task { @MainActor in
@@ -656,7 +665,7 @@ final class AccountsViewModel {
     private func handleAddAccountAuthFileChange() {
         Task {
             try? await Task.sleep(for: .milliseconds(500))
-            guard let account = CodexAPIService.readAuthFile() else {
+            guard let account = CodexAPIService.readAuthFile(codexHome: importCodexHome) else {
                 addAccountStatus = .error("Could not read auth file. Try again.")
                 return
             }

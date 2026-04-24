@@ -13,12 +13,14 @@ import Foundation
 final class AuthFileWatcher {
     var isWatching = false
     var onAuthFileChanged: (() -> Void)?
+    var codexHomeOverride: String?
 
     private var timer: Timer?
     private var lastModified: Date?
 
     var authFilePath: String {
-        let codexHome = ProcessInfo.processInfo.environment["CODEX_HOME"]
+        let codexHome = codexHomeOverride
+            ?? ProcessInfo.processInfo.environment["CODEX_HOME"]
             ?? "\(NSHomeDirectory())/.codex"
         return (codexHome as NSString).appendingPathComponent("auth.json")
     }

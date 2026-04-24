@@ -10,6 +10,7 @@ import SwiftUI
 struct AddAccountView: View {
     let status: AccountsViewModel.AddAccountStatus
     let hasExistingAccounts: Bool
+    let authCommand: String
     let onCancel: () -> Void
 
     var body: some View {
@@ -67,23 +68,15 @@ struct AddAccountView: View {
                 .foregroundStyle(Color.white.opacity(0.80))
                 .multilineTextAlignment(.center)
 
-            VStack(spacing: 6) {
-                if hasExistingAccounts {
-                    CommandBlock(command: "codex logout", description: "Sign out current account")
-                    HStack {
-                        Rectangle()
-                            .fill(Color.white.opacity(0.25))
-                            .frame(width: 24, height: 1)
-                        Text("then")
-                            .font(.system(size: 10))
-                            .foregroundStyle(Color.white.opacity(0.45))
-                        Rectangle()
-                            .fill(Color.white.opacity(0.25))
-                            .frame(width: 24, height: 1)
-                    }
-                }
-                CommandBlock(command: "codex auth", description: "Sign in with another account")
-            }
+            CommandBlock(
+                command: authCommand,
+                description: "Sign in without logging out of your main Codex session"
+            )
+
+            Text("This uses a separate Codex auth folder, so existing saved accounts are not revoked.")
+                .font(.system(size: 10))
+                .foregroundStyle(Color.white.opacity(0.55))
+                .multilineTextAlignment(.center)
 
             if status == .watching {
                 HStack(spacing: 6) {

@@ -66,6 +66,7 @@ struct MenuBarPopover: View {
             AddAccountView(
                 status: viewModel.addAccountStatus,
                 hasExistingAccounts: !viewModel.accounts.isEmpty,
+                authCommand: viewModel.addAccountCommand,
                 onCancel: { viewModel.cancelAdding() }
             )
             .transition(.opacity)

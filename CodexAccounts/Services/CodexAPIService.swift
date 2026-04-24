@@ -119,12 +119,17 @@ enum CodexAPIService {
         trigger: AuditTrigger,
         maxTokenAge: TimeInterval,
         staleAfter: TimeInterval,
+        refreshBeforeExpiry: TimeInterval,
         now: Date = Date()
     ) async throws -> AuditResult {
-        var candidate = markStaleIfNeeded(for: account, staleAfter: staleAfter, now: now)
+        let candidate = markStaleIfNeeded(for: account, staleAfter: staleAfter, now: now)
         let refreshBaseline = candidate.lastSuccessfulTokenRefreshAt ?? candidate.lastTokenRefresh ?? candidate.addedAt
-        let shouldRefresh = trigger == .manualRefresh
-            || candidate.authState == .stale
+        let accessTokenExpiresSoon = accessTokenExpiresSoon(
+            candidate.accessToken,
+            refreshBefore: refreshBeforeExpiry,
+            now: now
+        )
+        let shouldRefresh = accessTokenExpiresSoon
             || now.timeIntervalSince(refreshBaseline) >= maxTokenAge
 
         guard shouldRefresh else {
@@ -135,12 +140,20 @@ enum CodexAPIService {
                 return AuditResult(account: candidate, didRefresh: false)
             }
 
-            candidate.authState = .healthy
             return AuditResult(account: candidate, didRefresh: false)
         }
 
         let refreshed = try await refreshToken(for: candidate, now: now)
         return AuditResult(account: refreshed, didRefresh: true)
+    }
+
+    private static func accessTokenExpiresSoon(
+        _ token: String,
+        refreshBefore: TimeInterval,
+        now: Date
+    ) -> Bool {
+        guard let expiry = JWTParser.parse(token)?.expiresAt else { return false }
+        return expiry.timeIntervalSince(now) <= refreshBefore
     }
 
     static func markUsageSuccess(for account: CodexAccount, now: Date = Date()) -> CodexAccount {
@@ -383,8 +396,9 @@ enum CodexAPIService {
 
     // MARK: - Auth File Reading
 
-    static func readAuthFile() -> CodexAccount? {
-        let codexHome = ProcessInfo.processInfo.environment["CODEX_HOME"]
+    static func readAuthFile(codexHome: String? = nil) -> CodexAccount? {
+        let codexHome = codexHome
+            ?? ProcessInfo.processInfo.environment["CODEX_HOME"]
             ?? "\(NSHomeDirectory())/.codex"
         let path = (codexHome as NSString).appendingPathComponent("auth.json")
 
