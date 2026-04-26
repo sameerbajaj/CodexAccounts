@@ -9,8 +9,8 @@ import SwiftUI
 
 struct AddAccountView: View {
     let status: AccountsViewModel.AddAccountStatus
-    let hasExistingAccounts: Bool
     let authCommand: String
+    let prompt: String
     let onCancel: () -> Void
 
     var body: some View {
@@ -63,9 +63,14 @@ struct AddAccountView: View {
 
     private var watchingContent: some View {
         VStack(spacing: 12) {
+            Text(prompt)
+                .font(.system(size: 11))
+                .foregroundStyle(Color.white.opacity(0.82))
+                .multilineTextAlignment(.center)
+
             Text("Run the following in your terminal:")
                 .font(.system(size: 11))
-                .foregroundStyle(Color.white.opacity(0.80))
+                .foregroundStyle(Color.white.opacity(0.64))
                 .multilineTextAlignment(.center)
 
             CommandBlock(
@@ -73,9 +78,9 @@ struct AddAccountView: View {
                 description: "Sign in without logging out of your main Codex session"
             )
 
-            Text("This uses a separate Codex auth folder, so existing saved accounts are not revoked.")
-                .font(.system(size: 10))
-                .foregroundStyle(Color.white.opacity(0.55))
+            Text("This uses a separate Codex auth folder and creates it if needed, so existing saved accounts are not revoked.")
+                .font(.system(size: 9.5))
+                .foregroundStyle(Color.white.opacity(0.52))
                 .multilineTextAlignment(.center)
 
             if status == .watching {

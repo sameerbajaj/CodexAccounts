@@ -33,11 +33,11 @@ struct AccountCardView: View {
             // Left accent bar
             Rectangle()
                 .fill(accentColor)
-                .frame(width: 3.5)
+                .frame(width: 3)
                 .clipShape(
                     UnevenRoundedRectangle(
-                        topLeadingRadius: 9,
-                        bottomLeadingRadius: 9,
+                        topLeadingRadius: 8,
+                        bottomLeadingRadius: 8,
                         bottomTrailingRadius: 0,
                         topTrailingRadius: 0
                     )
@@ -45,40 +45,40 @@ struct AccountCardView: View {
 
             VStack(alignment: .leading, spacing: 0) {
                 headerRow
-                    .padding(.top, 11)
-                    .padding(.horizontal, 12)
+                    .padding(.top, 9)
+                    .padding(.horizontal, 10)
 
                 if showStateRow {
                     stateRow
-                        .padding(.horizontal, 12)
-                        .padding(.top, 8)
+                        .padding(.horizontal, 10)
+                        .padding(.top, 6)
                 }
 
                 if let usage {
                     usageRows(usage)
-                        .padding(.horizontal, 12)
-                        .padding(.bottom, isTestingMessage || testResult != nil ? 0 : 11)
+                        .padding(.horizontal, 10)
+                        .padding(.bottom, isTestingMessage || testResult != nil ? 0 : 9)
                 } else {
                     loadingRow
-                        .padding(.horizontal, 12)
-                        .padding(.bottom, isTestingMessage || testResult != nil ? 0 : 11)
+                        .padding(.horizontal, 10)
+                        .padding(.bottom, isTestingMessage || testResult != nil ? 0 : 9)
                 }
 
                 if isTestingMessage {
                     testMessageLoadingRow
-                        .padding(.horizontal, 12)
-                        .padding(.bottom, 11)
+                        .padding(.horizontal, 10)
+                        .padding(.bottom, 9)
                 } else if let result = testResult {
                     testResultRow(result)
-                        .padding(.horizontal, 12)
-                        .padding(.bottom, 11)
+                        .padding(.horizontal, 10)
+                        .padding(.bottom, 9)
                 }
             }
         }
         .background(cardBackground)
-        .clipShape(RoundedRectangle(cornerRadius: 9))
+        .clipShape(RoundedRectangle(cornerRadius: 8))
         .overlay(
-            RoundedRectangle(cornerRadius: 9)
+            RoundedRectangle(cornerRadius: 8)
                 .strokeBorder(borderColor, lineWidth: 0.5)
         )
         .contextMenu {
@@ -110,7 +110,7 @@ struct AccountCardView: View {
     private var headerRow: some View {
         HStack(spacing: 6) {
             Text(account.email)
-                .font(.system(size: 12.5, weight: .semibold))
+                .font(.system(size: 12, weight: .semibold))
                 .foregroundStyle(Color.white.opacity(0.95))
                 .lineLimit(1)
                 .truncationMode(.middle)
@@ -119,7 +119,7 @@ struct AccountCardView: View {
 
             if account.isPinned {
                 Image(systemName: "pin.fill")
-                    .font(.system(size: 8))
+                    .font(.system(size: 7.5))
                     .foregroundStyle(Color.orange.opacity(0.9))
             }
 
@@ -159,10 +159,10 @@ struct AccountCardView: View {
                 RoundedRectangle(cornerRadius: 5)
                     .fill(Color.white.opacity(isHovering ? 0.10 : 0))
                 Image(systemName: "ellipsis")
-                    .font(.system(size: 10, weight: .semibold))
+                    .font(.system(size: 9.5, weight: .semibold))
                     .foregroundStyle(Color.white.opacity(0.75))
             }
-            .frame(width: 24, height: 20)
+            .frame(width: 22, height: 18)
         }
         .menuStyle(.borderlessButton)
         .menuIndicator(.hidden)
@@ -171,10 +171,10 @@ struct AccountCardView: View {
 
     private var authBadge: some View {
         Text(account.authState.displayName)
-            .font(.system(size: 8.5, weight: .bold, design: .rounded))
+            .font(.system(size: 8, weight: .bold, design: .rounded))
             .foregroundStyle(authBadgeTextColor)
-            .padding(.horizontal, 6)
-            .padding(.vertical, 3)
+            .padding(.horizontal, 5)
+            .padding(.vertical, 2.5)
             .background(Capsule().fill(authBadgeColor.opacity(0.18)))
             .overlay(
                 Capsule()
@@ -187,7 +187,7 @@ struct AccountCardView: View {
     @ViewBuilder
     private func usageRows(_ usage: AccountUsage) -> some View {
         // Usage bar + big % — no redundant label
-        HStack(spacing: 10) {
+        HStack(spacing: 8) {
             GeometryReader { proxy in
                 ZStack(alignment: .leading) {
                     RoundedRectangle(cornerRadius: 4.5)
@@ -199,30 +199,30 @@ struct AccountCardView: View {
                         .animation(.spring(duration: 0.5), value: usage.remainingPercent)
                 }
             }
-            .frame(height: 9)
+            .frame(height: 8)
 
             VStack(alignment: .trailing, spacing: 1) {
                 Text("\(Int(clampedPercent(usage.remainingPercent)))%")
-                    .font(.system(size: 14, weight: .bold, design: .monospaced))
+                    .font(.system(size: 13, weight: .bold, design: .monospaced))
                     .foregroundStyle(percentColor(for: usage.remainingPercent))
                 if usage.isWeeklyPrimary {
                     Text("Weekly")
-                        .font(.system(size: 8, weight: .semibold))
+                        .font(.system(size: 7.5, weight: .semibold))
                         .foregroundStyle(Color.white.opacity(0.62))
                 }
             }
-            .frame(width: usage.isWeeklyPrimary ? 52 : 44, alignment: .trailing)
+            .frame(width: usage.isWeeklyPrimary ? 48 : 40, alignment: .trailing)
         }
-        .padding(.top, 7)
+        .padding(.top, 6)
 
         // Reset + meta row
         HStack(spacing: 0) {
             if let resetAt = usage.resetAt {
                 HStack(spacing: 3) {
                     Image(systemName: "arrow.clockwise")
-                        .font(.system(size: 8))
+                        .font(.system(size: 7.5))
                     Text("\(usage.isWeeklyPrimary ? "Weekly resets" : "Resets") \(resetAt.resetDescription)")
-                        .font(.system(size: 10))
+                        .font(.system(size: 9.5))
                 }
                 .foregroundStyle(Color.white.opacity(0.75))
             }
@@ -232,7 +232,7 @@ struct AccountCardView: View {
             Group {
                 if let shortId = account.shortAccountId {
                     Text(shortId)
-                        .font(.system(size: 9, design: .monospaced))
+                        .font(.system(size: 8.5, design: .monospaced))
                         .foregroundStyle(Color.white.opacity(0.60))
                         .help(account.accountId ?? "")
                 }
@@ -240,12 +240,12 @@ struct AccountCardView: View {
                     ProgressView().controlSize(.mini).padding(.leading, 3)
                 } else {
                     Text("  \(usage.lastUpdated.relativeDescription)")
-                        .font(.system(size: 9))
+                        .font(.system(size: 8.5))
                         .foregroundStyle(Color.white.opacity(0.60))
                 }
             }
         }
-        .padding(.top, 5)
+        .padding(.top, 4)
 
         if let weeklyRemaining = usage.weeklyRemainingPercent, !usage.isWeeklyPrimary {
             weeklyUsageRow(weeklyRemaining: weeklyRemaining, weeklyResetAt: usage.weeklyResetAt)
@@ -272,11 +272,11 @@ struct AccountCardView: View {
         case .compact:
             HStack(spacing: 4) {
                 Text("Weekly \(Int(clampedPercent(weeklyRemaining)))% left")
-                    .font(.system(size: 9.5, weight: .medium))
+                    .font(.system(size: 9, weight: .medium))
                     .foregroundStyle(Color.white.opacity(0.70))
                 if let weeklyResetAt {
                     Text("| resets \(weeklyResetAt.resetDescription)")
-                        .font(.system(size: 9.5))
+                        .font(.system(size: 9))
                         .foregroundStyle(Color.white.opacity(0.58))
                 }
                 Spacer()
@@ -319,16 +319,17 @@ struct AccountCardView: View {
     private var stateRow: some View {
         HStack(spacing: 6) {
             Image(systemName: stateIconName)
-                .font(.system(size: 10))
+                .font(.system(size: 9))
                 .foregroundStyle(stateColor)
             Text(stateText)
-                .font(.system(size: 11))
+                .font(.system(size: 10))
                 .foregroundStyle(Color.white.opacity(0.85))
+                .lineLimit(1)
             Spacer()
             if case .needsReauth = status {
                 Button(action: onReauth) {
-                    Text("Re-authenticate")
-                        .font(.system(size: 10, weight: .medium))
+                    Text("Reauth")
+                        .font(.system(size: 9.5, weight: .medium))
                 }
                 .buttonStyle(.borderedProminent)
                 .tint(.orange)
@@ -343,10 +344,10 @@ struct AccountCardView: View {
         HStack(spacing: 6) {
             ProgressView().controlSize(.small)
             Text("Loading...")
-                .font(.system(size: 11))
+                .font(.system(size: 10))
                 .foregroundStyle(Color.white.opacity(0.75))
         }
-        .padding(.top, 8)
+        .padding(.top, 6)
     }
 
     // MARK: - Test Message Rows
@@ -355,10 +356,10 @@ struct AccountCardView: View {
         HStack(spacing: 6) {
             ProgressView().controlSize(.small)
             Text("Sending test message…")
-                .font(.system(size: 10))
+                .font(.system(size: 9.5))
                 .foregroundStyle(Color.white.opacity(0.75))
         }
-        .padding(.top, 6)
+        .padding(.top, 5)
     }
 
     private func testResultRow(_ result: TestMessageResult) -> some View {
@@ -368,7 +369,7 @@ struct AccountCardView: View {
                 .foregroundStyle(result.success ? .green : .red)
                 .padding(.top, 1)
             Text(result.message)
-                .font(.system(size: 9.5, design: .monospaced))
+                .font(.system(size: 9, design: .monospaced))
                 .foregroundStyle(result.success ? Color.green.opacity(0.85) : Color.red.opacity(0.85))
                 .lineLimit(4)
                 .textSelection(.enabled)
@@ -380,12 +381,12 @@ struct AccountCardView: View {
             }
             .buttonStyle(.plain)
         }
-        .padding(6)
+        .padding(5)
         .background(
             RoundedRectangle(cornerRadius: 6)
                 .fill((result.success ? Color.green : Color.red).opacity(0.10))
         )
-        .padding(.top, 6)
+        .padding(.top, 5)
     }
 
     // MARK: - Colors
@@ -522,10 +523,10 @@ struct PlanBadge: View {
 
     var body: some View {
         Text(displayName)
-            .font(.system(size: 9, weight: .heavy, design: .rounded))
+            .font(.system(size: 8.5, weight: .heavy, design: .rounded))
             .foregroundStyle(.white)
-            .padding(.horizontal, 8)
-            .padding(.vertical, 3)
+            .padding(.horizontal, 7)
+            .padding(.vertical, 2.5)
             .background(Capsule().fill(badgeGradient))
     }
 

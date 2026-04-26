@@ -167,6 +167,7 @@ final class AccountsViewModel {
     private var frozenAccountOrder: [String]? = nil
     private var activeRefreshCount = 0
     private var isAuditingSessions = false
+    private var pendingReauthAccountID: String? = nil
 
     private let tokenAuditInterval: TimeInterval = 6 * 60 * 60
     private let tokenRefreshMaxAge: TimeInterval = 7 * 24 * 60 * 60
@@ -255,7 +256,16 @@ final class AccountsViewModel {
     }
 
     var addAccountCommand: String {
-        "CODEX_HOME=\"$HOME/.codex-accounts-import\" codex auth"
+        "mkdir -p \"$HOME/.codex-accounts-import\" && CODEX_HOME=\"$HOME/.codex-accounts-import\" codex auth"
+    }
+
+    var addAccountPrompt: String {
+        if let pendingReauthAccountID,
+           let account = currentAccount(id: pendingReauthAccountID)
+        {
+            return "Sign back into \(account.email) in the browser window that Codex opens."
+        }
+        return "Sign into the account you want to import in the browser window that Codex opens."
     }
 
     var statusColor: Color {
@@ -643,6 +653,17 @@ final class AccountsViewModel {
     // MARK: - Add Account Flow
 
     func startAddingAccount() {
+        pendingReauthAccountID = nil
+        beginAddAccountFlow()
+    }
+
+    private func beginAddAccountFlow() {
+        guard ensureImportCodexHomeExists() else {
+            addAccountStatus = .error("Could not prepare import auth folder.")
+            showingAddAccount = true
+            return
+        }
+
         showingAddAccount = true
         addAccountStatus = .watching
 
@@ -659,6 +680,8 @@ final class AccountsViewModel {
     func cancelAdding() {
         showingAddAccount = false
         addAccountStatus = .idle
+        pendingReauthAccountID = nil
+        addAccountWatcher.codexHomeOverride = nil
         addAccountWatcher.stop()
     }
 
@@ -667,6 +690,14 @@ final class AccountsViewModel {
             try? await Task.sleep(for: .milliseconds(500))
             guard let account = CodexAPIService.readAuthFile(codexHome: importCodexHome) else {
                 addAccountStatus = .error("Could not read auth file. Try again.")
+                return
+            }
+
+            if let pendingReauthAccountID,
+               pendingReauthAccountID != account.id,
+               let expected = currentAccount(id: pendingReauthAccountID)
+            {
+                addAccountStatus = .error("Signed into \(account.email). Expected \(expected.email).")
                 return
             }
 
@@ -680,6 +711,8 @@ final class AccountsViewModel {
             }
 
             addAccountWatcher.stop()
+            addAccountWatcher.codexHomeOverride = nil
+            pendingReauthAccountID = nil
             Task { await refreshAccount(account, trigger: .authFileSync) }
 
             try? await Task.sleep(for: .seconds(2))
@@ -698,7 +731,22 @@ final class AccountsViewModel {
     }
 
     func reauthAccount(_ account: CodexAccount) {
-        startAddingAccount()
+        pendingReauthAccountID = account.id
+        beginAddAccountFlow()
+    }
+
+    @discardableResult
+    private func ensureImportCodexHomeExists() -> Bool {
+        do {
+            try FileManager.default.createDirectory(
+                atPath: importCodexHome,
+                withIntermediateDirectories: true
+            )
+            return true
+        } catch {
+            print("AccountsViewModel: Failed to create import CODEX_HOME: \(error)")
+            return false
+        }
     }
 
     // MARK: - Pinning

@@ -51,7 +51,7 @@ struct MenuBarPopover: View {
                 .background(Color.white.opacity(0.12))
             footer
         }
-        .frame(width: 360)
+        .frame(width: 340)
         .background(Color(red: 0.14, green: 0.14, blue: 0.16))
         .environment(\.colorScheme, .dark)
         .preferredColorScheme(.dark)
@@ -65,8 +65,8 @@ struct MenuBarPopover: View {
         if viewModel.showingAddAccount {
             AddAccountView(
                 status: viewModel.addAccountStatus,
-                hasExistingAccounts: !viewModel.accounts.isEmpty,
                 authCommand: viewModel.addAccountCommand,
+                prompt: viewModel.addAccountPrompt,
                 onCancel: { viewModel.cancelAdding() }
             )
             .transition(.opacity)
@@ -118,14 +118,14 @@ struct MenuBarPopover: View {
                     }
                 }
             }
-            .padding(.horizontal, 16)
-            .padding(.top, 14)
-            .padding(.bottom, 10)
+            .padding(.horizontal, 14)
+            .padding(.top, 12)
+            .padding(.bottom, 8)
 
             // Row 2: Segmented tab picker
             tabPicker
-                .padding(.horizontal, 16)
-                .padding(.bottom, 10)
+                .padding(.horizontal, 14)
+                .padding(.bottom, 8)
 
             Divider().background(Color.white.opacity(0.12))
         }
@@ -284,7 +284,7 @@ struct MenuBarPopover: View {
                 Divider().background(Color.white.opacity(0.12))
             }
 
-            VStack(spacing: 5) {
+            VStack(spacing: 4) {
                 ForEach(viewModel.displayedAccounts) { account in
                     AccountCardView(
                         account: account,
@@ -302,8 +302,8 @@ struct MenuBarPopover: View {
                     )
                 }
             }
-            .padding(.horizontal, 10)
-            .padding(.vertical, 10)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 8)
         }
     }
 
