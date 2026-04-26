@@ -71,14 +71,80 @@ struct CodexAccountsTests {
         #expect(updated.lastSuccessfulUsageAt == Date(timeIntervalSince1970: 450))
     }
 
+    @Test func weeklyUsageOverdueUsesGracePeriod() async throws {
+        let usage = AccountUsage(
+            usedPercent: 0,
+            resetAt: Date(timeIntervalSince1970: 1_000),
+            primaryWindowSeconds: 5 * 60 * 60,
+            weeklyUsedPercent: 0,
+            weeklyResetAt: Date(timeIntervalSince1970: 1_000),
+            weeklyWindowSeconds: 7 * 24 * 60 * 60,
+            creditsBalance: nil,
+            hasCredits: false,
+            isUnlimited: false,
+            lastUpdated: Date(timeIntervalSince1970: 1_050),
+            error: nil,
+            lastActivityAt: nil
+        )
+
+        #expect(!usage.weeklyResetIsOverdue(now: Date(timeIntervalSince1970: 1_120), grace: 180))
+        #expect(usage.weeklyResetIsOverdue(now: Date(timeIntervalSince1970: 1_200), grace: 180))
+    }
+
+    @Test func codexAccountDecodeBackfillsWeeklyAutoKickDefaults() async throws {
+        let json = """
+        {
+          "id": "test@example.com",
+          "email": "test@example.com",
+          "planType": "plus",
+          "accessToken": "access",
+          "refreshToken": "refresh",
+          "addedAt": "1970-01-01T00:00:00Z",
+          "isPinned": false
+        }
+        """
+
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        let decoded = try decoder.decode(CodexAccount.self, from: Data(json.utf8))
+
+        #expect(decoded.weeklyAutoKickOverride == .inherit)
+        #expect(decoded.weeklyAutoKickAttemptCount == 0)
+        #expect(decoded.lastWeeklyAutoKickCycleID == nil)
+    }
+
+    @Test func weeklyAutoKickPolicyResolvesGlobalAndPerAccountOverrides() async throws {
+        let viewModel = AccountsViewModel()
+        let pinned = makeAccount(isPinned: true)
+        let forcedOn = makeAccount(
+            email: "force-on@example.com",
+            weeklyAutoKickOverride: .forceOn
+        )
+        let forcedOff = makeAccount(
+            email: "force-off@example.com",
+            isPinned: true,
+            weeklyAutoKickOverride: .forceOff
+        )
+
+        viewModel.accounts = [pinned, forcedOn, forcedOff]
+        viewModel.weeklyAutoKickMode = .pinnedAccounts
+
+        #expect(viewModel.isWeeklyAutoKickEnabled(for: pinned))
+        #expect(viewModel.isWeeklyAutoKickEnabled(for: forcedOn))
+        #expect(!viewModel.isWeeklyAutoKickEnabled(for: forcedOff))
+    }
+
     private func makeAccount(
+        email: String = "test@example.com",
         lastSuccessfulTokenRefreshAt: Date? = nil,
         lastRefreshFailureAt: Date? = nil,
         consecutiveRefreshFailures: Int = 0,
-        authState: AuthState = .healthy
+        authState: AuthState = .healthy,
+        isPinned: Bool = false,
+        weeklyAutoKickOverride: WeeklyAutoKickOverride = .inherit
     ) -> CodexAccount {
         CodexAccount(
-            email: "test@example.com",
+            email: email,
             planType: "plus",
             accessToken: "access",
             refreshToken: "refresh",
@@ -88,7 +154,9 @@ struct CodexAccountsTests {
             lastRefreshFailureAt: lastRefreshFailureAt,
             consecutiveRefreshFailures: consecutiveRefreshFailures,
             authState: authState,
-            addedAt: Date(timeIntervalSince1970: 0)
+            addedAt: Date(timeIntervalSince1970: 0),
+            isPinned: isPinned,
+            weeklyAutoKickOverride: weeklyAutoKickOverride
         )
     }
 

@@ -23,6 +23,46 @@ enum AuthState: String, Codable, Hashable {
     }
 }
 
+enum WeeklyAutoKickMode: String, Codable, CaseIterable, Identifiable {
+    case off = "Off"
+    case pinnedAccounts = "Pinned Accounts"
+    case allAccounts = "All Accounts"
+
+    var id: String { rawValue }
+
+    var icon: String {
+        switch self {
+        case .off: return "power"
+        case .pinnedAccounts: return "pin"
+        case .allAccounts: return "sparkles"
+        }
+    }
+
+    var description: String {
+        switch self {
+        case .off: return "Never send an automatic weekly kick message"
+        case .pinnedAccounts: return "Only pinned accounts can auto-start a new weekly window"
+        case .allAccounts: return "Any healthy tracked account can auto-start a new weekly window"
+        }
+    }
+}
+
+enum WeeklyAutoKickOverride: String, Codable, CaseIterable, Identifiable {
+    case inherit = "Inherit Global Setting"
+    case forceOn = "Always On"
+    case forceOff = "Always Off"
+
+    var id: String { rawValue }
+
+    var icon: String {
+        switch self {
+        case .inherit: return "point.3.connected.trianglepath.dotted"
+        case .forceOn: return "bolt.badge.checkmark"
+        case .forceOff: return "bolt.slash"
+        }
+    }
+}
+
 struct CodexAccount: Identifiable, Codable, Hashable {
     let id: String
     var email: String
@@ -40,6 +80,13 @@ struct CodexAccount: Identifiable, Codable, Hashable {
     var authState: AuthState
     let addedAt: Date
     var isPinned: Bool
+    var weeklyAutoKickOverride: WeeklyAutoKickOverride
+    var lastObservedWeeklyResetAt: Date?
+    var lastWeeklyAutoKickCycleID: String?
+    var lastWeeklyAutoKickAttemptAt: Date?
+    var lastWeeklyAutoKickSuccessAt: Date?
+    var lastWeeklyAutoKickFailure: String?
+    var weeklyAutoKickAttemptCount: Int
 
     enum CodingKeys: String, CodingKey {
         case id, email, planType, accessToken, refreshToken
@@ -48,6 +95,10 @@ struct CodexAccount: Identifiable, Codable, Hashable {
         case lastRefreshAttemptAt, lastRefreshFailureAt
         case consecutiveRefreshFailures, authState
         case addedAt, isPinned
+        case weeklyAutoKickOverride, lastObservedWeeklyResetAt
+        case lastWeeklyAutoKickCycleID, lastWeeklyAutoKickAttemptAt
+        case lastWeeklyAutoKickSuccessAt, lastWeeklyAutoKickFailure
+        case weeklyAutoKickAttemptCount
     }
 
     init(
@@ -65,7 +116,14 @@ struct CodexAccount: Identifiable, Codable, Hashable {
         consecutiveRefreshFailures: Int = 0,
         authState: AuthState = .healthy,
         addedAt: Date = Date(),
-        isPinned: Bool = false
+        isPinned: Bool = false,
+        weeklyAutoKickOverride: WeeklyAutoKickOverride = .inherit,
+        lastObservedWeeklyResetAt: Date? = nil,
+        lastWeeklyAutoKickCycleID: String? = nil,
+        lastWeeklyAutoKickAttemptAt: Date? = nil,
+        lastWeeklyAutoKickSuccessAt: Date? = nil,
+        lastWeeklyAutoKickFailure: String? = nil,
+        weeklyAutoKickAttemptCount: Int = 0
     ) {
         self.id = email.lowercased()
         self.email = email
@@ -83,6 +141,13 @@ struct CodexAccount: Identifiable, Codable, Hashable {
         self.authState = authState
         self.addedAt = addedAt
         self.isPinned = isPinned
+        self.weeklyAutoKickOverride = weeklyAutoKickOverride
+        self.lastObservedWeeklyResetAt = lastObservedWeeklyResetAt
+        self.lastWeeklyAutoKickCycleID = lastWeeklyAutoKickCycleID
+        self.lastWeeklyAutoKickAttemptAt = lastWeeklyAutoKickAttemptAt
+        self.lastWeeklyAutoKickSuccessAt = lastWeeklyAutoKickSuccessAt
+        self.lastWeeklyAutoKickFailure = lastWeeklyAutoKickFailure
+        self.weeklyAutoKickAttemptCount = weeklyAutoKickAttemptCount
     }
 
     init(from decoder: Decoder) throws {
@@ -103,6 +168,13 @@ struct CodexAccount: Identifiable, Codable, Hashable {
         authState = (try? c.decode(AuthState.self, forKey: .authState)) ?? .healthy
         addedAt = try c.decode(Date.self, forKey: .addedAt)
         isPinned = (try? c.decode(Bool.self, forKey: .isPinned)) ?? false
+        weeklyAutoKickOverride = (try? c.decode(WeeklyAutoKickOverride.self, forKey: .weeklyAutoKickOverride)) ?? .inherit
+        lastObservedWeeklyResetAt = try c.decodeIfPresent(Date.self, forKey: .lastObservedWeeklyResetAt)
+        lastWeeklyAutoKickCycleID = try c.decodeIfPresent(String.self, forKey: .lastWeeklyAutoKickCycleID)
+        lastWeeklyAutoKickAttemptAt = try c.decodeIfPresent(Date.self, forKey: .lastWeeklyAutoKickAttemptAt)
+        lastWeeklyAutoKickSuccessAt = try c.decodeIfPresent(Date.self, forKey: .lastWeeklyAutoKickSuccessAt)
+        lastWeeklyAutoKickFailure = try c.decodeIfPresent(String.self, forKey: .lastWeeklyAutoKickFailure)
+        weeklyAutoKickAttemptCount = (try? c.decode(Int.self, forKey: .weeklyAutoKickAttemptCount)) ?? 0
     }
 
     /// First 8 chars of account UUID for display
@@ -173,6 +245,16 @@ struct AccountUsage: Equatable {
 
     /// Alias kept so existing references compile
     var lowestRemainingPercent: Double { remainingPercent }
+
+    var weeklyCycleIdentifier: String? {
+        guard let weeklyResetAt else { return nil }
+        return String(Int(weeklyResetAt.timeIntervalSince1970))
+    }
+
+    func weeklyResetIsOverdue(now: Date = Date(), grace: TimeInterval = 0) -> Bool {
+        guard let weeklyResetAt else { return false }
+        return now.timeIntervalSince(weeklyResetAt) >= grace
+    }
 
     static let placeholder = AccountUsage(
         usedPercent: 0,

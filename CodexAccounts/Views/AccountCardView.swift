@@ -18,12 +18,17 @@ struct AccountCardView: View {
     let onTogglePin: () -> Void
     let onTestMessage: () -> Void
     let onDismissTestResult: () -> Void
+    let onSetWeeklyAutoKickOverride: (WeeklyAutoKickOverride) -> Void
     let isTestingMessage: Bool
     let testResult: TestMessageResult?
+    let weeklyAutoKickEnabled: Bool
+    let weeklyAutoKickOverride: WeeklyAutoKickOverride
+    let weeklyAutoKickStatusText: String?
 
     @State private var isHovering = false
 
     private var showStateRow: Bool {
+        if weeklyAutoKickStatusText != nil { return true }
         if case .active = status, account.authState == .healthy { return false }
         return true
     }
@@ -52,6 +57,12 @@ struct AccountCardView: View {
                     stateRow
                         .padding(.horizontal, 10)
                         .padding(.top, 6)
+                }
+
+                if let weeklyAutoKickStatusText {
+                    autoKickRow(weeklyAutoKickStatusText)
+                        .padding(.horizontal, 10)
+                        .padding(.top, showStateRow ? 4 : 6)
                 }
 
                 if let usage {
@@ -93,6 +104,7 @@ struct AccountCardView: View {
             Button(action: onRefresh) {
                 Label("Refresh", systemImage: "arrow.clockwise")
             }
+            weeklyAutoKickMenu
             Button(action: onReauth) {
                 Label("Re-authenticate", systemImage: "key")
             }
@@ -147,6 +159,7 @@ struct AccountCardView: View {
             Button(action: onRefresh) {
                 Label("Refresh", systemImage: "arrow.clockwise")
             }
+            weeklyAutoKickMenu
             Button(action: onReauth) {
                 Label("Re-authenticate", systemImage: "key")
             }
@@ -221,7 +234,7 @@ struct AccountCardView: View {
                 HStack(spacing: 3) {
                     Image(systemName: "arrow.clockwise")
                         .font(.system(size: 7.5))
-                    Text("\(usage.isWeeklyPrimary ? "Weekly resets" : "Resets") \(resetAt.resetDescription)")
+                    Text(resetSummary(for: usage, resetAt: resetAt))
                         .font(.system(size: 9.5))
                 }
                 .foregroundStyle(Color.white.opacity(0.75))
@@ -275,7 +288,7 @@ struct AccountCardView: View {
                     .font(.system(size: 9, weight: .medium))
                     .foregroundStyle(Color.white.opacity(0.70))
                 if let weeklyResetAt {
-                    Text("| resets \(weeklyResetAt.resetDescription)")
+                    Text("| \(weeklyResetDescription(for: weeklyResetAt))")
                         .font(.system(size: 9))
                         .foregroundStyle(Color.white.opacity(0.58))
                 }
@@ -306,11 +319,24 @@ struct AccountCardView: View {
                 .frame(height: 6)
 
                 if let weeklyResetAt {
-                    Text("Resets \(weeklyResetAt.resetDescription)")
+                    Text(weeklyResetDescription(for: weeklyResetAt))
                         .font(.system(size: 9))
                         .foregroundStyle(Color.white.opacity(0.58))
                 }
             }
+        }
+    }
+
+    private func autoKickRow(_ text: String) -> some View {
+        HStack(spacing: 6) {
+            Image(systemName: weeklyAutoKickEnabled ? "bolt.fill" : "bolt.slash")
+                .font(.system(size: 8.5))
+                .foregroundStyle(weeklyAutoKickEnabled ? Color.cyan.opacity(0.95) : Color.white.opacity(0.55))
+            Text(text)
+                .font(.system(size: 9))
+                .foregroundStyle(Color.white.opacity(0.72))
+                .lineLimit(2)
+            Spacer()
         }
     }
 
@@ -360,6 +386,16 @@ struct AccountCardView: View {
                 .foregroundStyle(Color.white.opacity(0.75))
         }
         .padding(.top, 5)
+    }
+
+    private var weeklyAutoKickMenu: some View {
+        Menu("Weekly Auto-Kick") {
+            ForEach(WeeklyAutoKickOverride.allCases) { overrideValue in
+                Button(action: { onSetWeeklyAutoKickOverride(overrideValue) }) {
+                    Label(overrideValue.rawValue, systemImage: weeklyAutoKickOverride == overrideValue ? "checkmark" : overrideValue.icon)
+                }
+            }
+        }
     }
 
     private func testResultRow(_ result: TestMessageResult) -> some View {
@@ -465,6 +501,20 @@ struct AccountCardView: View {
 
     private func clampedPercent(_ value: Double) -> Double {
         min(100, max(0, value))
+    }
+
+    private func resetSummary(for usage: AccountUsage, resetAt: Date) -> String {
+        if usage.isWeeklyPrimary, usage.weeklyResetIsOverdue(grace: 60) {
+            return "Weekly awaiting activation"
+        }
+        return "\(usage.isWeeklyPrimary ? "Weekly resets" : "Resets") \(resetAt.resetDescription)"
+    }
+
+    private func weeklyResetDescription(for resetAt: Date) -> String {
+        if let usage, usage.weeklyResetIsOverdue(grace: 60) {
+            return "Awaiting activation"
+        }
+        return "resets \(resetAt.resetDescription)"
     }
 
     private var stateIconName: String {

@@ -297,8 +297,15 @@ struct MenuBarPopover: View {
                         onTogglePin: { viewModel.togglePin(account) },
                         onTestMessage: { viewModel.sendTestMessage(account) },
                         onDismissTestResult: { viewModel.dismissTestResult(account.id) },
+                        onSetWeeklyAutoKickOverride: { viewModel.setWeeklyAutoKickOverride($0, for: account) },
                         isTestingMessage: viewModel.testMessageLoading.contains(account.id),
-                        testResult: viewModel.testMessageResults[account.id]
+                        testResult: viewModel.testMessageResults[account.id],
+                        weeklyAutoKickEnabled: viewModel.isWeeklyAutoKickEnabled(for: account),
+                        weeklyAutoKickOverride: viewModel.weeklyAutoKickOverride(for: account),
+                        weeklyAutoKickStatusText: viewModel.weeklyAutoKickStatusText(
+                            for: account,
+                            usage: viewModel.usageData[account.id]
+                        )
                     )
                 }
             }
@@ -475,6 +482,21 @@ struct MenuBarPopover: View {
                         isSelected: viewModel.refreshInterval == interval
                     ) {
                         viewModel.refreshInterval = interval
+                    }
+                }
+            }
+
+            Divider().background(Color.white.opacity(0.12)).padding(.horizontal, 14)
+
+            settingsSection(title: "Weekly Auto-Kick") {
+                ForEach(WeeklyAutoKickMode.allCases) { mode in
+                    settingsRow(
+                        icon: mode.icon,
+                        label: mode.rawValue,
+                        description: mode.description,
+                        isSelected: viewModel.weeklyAutoKickMode == mode
+                    ) {
+                        viewModel.weeklyAutoKickMode = mode
                     }
                 }
             }

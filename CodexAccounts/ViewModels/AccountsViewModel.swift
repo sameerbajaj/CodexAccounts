@@ -51,6 +51,9 @@ final class AccountsViewModel {
     var autoCheckUpdatesOnLaunch: Bool = true {
         didSet { UserDefaults.standard.set(autoCheckUpdatesOnLaunch, forKey: "autoCheckUpdatesOnLaunch") }
     }
+    var weeklyAutoKickMode: WeeklyAutoKickMode = .off {
+        didSet { UserDefaults.standard.set(weeklyAutoKickMode.rawValue, forKey: "weeklyAutoKickMode") }
+    }
 
     // MARK: - Sort
 
@@ -161,12 +164,14 @@ final class AccountsViewModel {
     private var hasSetup = false
     private var refreshTimer: Timer?
     private var tokenAuditTimer: Timer?
+    private var weeklyAutoKickTimer: Timer?
     private let syncWatcher = AuthFileWatcher()
     private let addAccountWatcher = AuthFileWatcher()
     private var lifecycleObservers: [NSObjectProtocol] = []
     private var frozenAccountOrder: [String]? = nil
     private var activeRefreshCount = 0
     private var isAuditingSessions = false
+    private var isEvaluatingWeeklyAutoKick = false
     private var pendingReauthAccountID: String? = nil
 
     private let tokenAuditInterval: TimeInterval = 6 * 60 * 60
@@ -174,6 +179,12 @@ final class AccountsViewModel {
     private let tokenRefreshExpiryBuffer: TimeInterval = 24 * 60 * 60
     private let staleSessionThreshold: TimeInterval = 24 * 60 * 60
     private let resumeAuditGapThreshold: TimeInterval = 20 * 60
+    private let weeklyAutoKickInterval: TimeInterval = 60
+    private let weeklyAutoKickDelay: TimeInterval = 5 * 60
+    private let weeklyAutoKickRetryDelay: TimeInterval = 3 * 60
+    private let weeklyAutoKickActivationDelay: TimeInterval = 8
+    private let weeklyAutoKickMaxAttempts = 3
+    private let weeklyResetDisplayGrace: TimeInterval = 60
     private let importCodexHome = "\(NSHomeDirectory())/.codex-accounts-import"
 
     // MARK: - Init
@@ -197,6 +208,10 @@ final class AccountsViewModel {
         }
         if UserDefaults.standard.object(forKey: "autoCheckUpdatesOnLaunch") != nil {
             autoCheckUpdatesOnLaunch = UserDefaults.standard.bool(forKey: "autoCheckUpdatesOnLaunch")
+        }
+        if let raw = UserDefaults.standard.string(forKey: "weeklyAutoKickMode"),
+           let mode = WeeklyAutoKickMode(rawValue: raw) {
+            weeklyAutoKickMode = mode
         }
     }
 
@@ -295,10 +310,12 @@ final class AccountsViewModel {
         startAuthFileSync()
         startAutoRefresh()
         startTokenAudit()
+        startWeeklyAutoKickTimer()
 
         Task {
             await auditAllSessions(trigger: .startup)
             await refreshAll(trigger: .manualRefresh)
+            await evaluateWeeklyAutoKickCandidates()
         }
 
         if autoCheckUpdatesOnLaunch {
@@ -369,6 +386,7 @@ final class AccountsViewModel {
                 newUsage.lastActivityAt = previousUsage?.lastActivityAt
             }
             usageData[account.id] = newUsage
+            syncWeeklyObservation(for: account.id, usage: newUsage)
 
             let persisted = mergeAccount(result.updatedAccount ?? CodexAPIService.markUsageSuccess(for: accountForUsage))
             accountStatuses[account.id] = status(for: persisted)
@@ -454,11 +472,15 @@ final class AccountsViewModel {
     private func handleLifecycleResume(trigger: CodexAPIService.AuditTrigger) {
         let now = Date()
         if let lastSessionAuditAt, now.timeIntervalSince(lastSessionAuditAt) < resumeAuditGapThreshold {
+            Task { await evaluateWeeklyAutoKickCandidates(now: now) }
             return
         }
 
         markStaleAccounts(now: now)
-        Task { await auditAllSessions(trigger: trigger) }
+        Task {
+            await auditAllSessions(trigger: trigger)
+            await evaluateWeeklyAutoKickCandidates(now: now)
+        }
     }
 
     // MARK: - Update Checking
@@ -528,6 +550,16 @@ final class AccountsViewModel {
                 } else {
                     await self.refreshAll(trigger: .timer)
                 }
+            }
+        }
+    }
+
+    private func startWeeklyAutoKickTimer() {
+        weeklyAutoKickTimer?.invalidate()
+        weeklyAutoKickTimer = Timer.scheduledTimer(withTimeInterval: weeklyAutoKickInterval, repeats: true) { [weak self] _ in
+            guard let self else { return }
+            Task { @MainActor in
+                await self.evaluateWeeklyAutoKickCandidates()
             }
         }
     }
@@ -784,6 +816,178 @@ final class AccountsViewModel {
         testMessageResults.removeValue(forKey: accountId)
     }
 
+    // MARK: - Weekly Auto Kick
+
+    func setWeeklyAutoKickOverride(_ overrideValue: WeeklyAutoKickOverride, for account: CodexAccount) {
+        guard let idx = accounts.firstIndex(where: { $0.id == account.id }) else { return }
+        accounts[idx].weeklyAutoKickOverride = overrideValue
+        persistAccounts()
+    }
+
+    func weeklyAutoKickOverride(for account: CodexAccount) -> WeeklyAutoKickOverride {
+        currentAccount(id: account.id)?.weeklyAutoKickOverride ?? account.weeklyAutoKickOverride
+    }
+
+    func isWeeklyAutoKickEnabled(for account: CodexAccount) -> Bool {
+        let current = currentAccount(id: account.id) ?? account
+        switch current.weeklyAutoKickOverride {
+        case .forceOn:
+            return true
+        case .forceOff:
+            return false
+        case .inherit:
+            switch weeklyAutoKickMode {
+            case .off:
+                return false
+            case .pinnedAccounts:
+                return current.isPinned
+            case .allAccounts:
+                return true
+            }
+        }
+    }
+
+    func weeklyAutoKickStatusText(for account: CodexAccount, usage: AccountUsage?) -> String? {
+        let current = currentAccount(id: account.id) ?? account
+
+        if !isWeeklyAutoKickEnabled(for: current) {
+            if let failure = current.lastWeeklyAutoKickFailure,
+               current.weeklyAutoKickAttemptCount >= weeklyAutoKickMaxAttempts
+            {
+                return "Weekly auto-kick failed this cycle: \(failure)"
+            }
+            return nil
+        }
+
+        if current.authState == .needsReauth {
+            return "Weekly auto-kick unavailable until re-authenticated"
+        }
+
+        if current.authState == .degraded {
+            return "Weekly auto-kick paused while refresh is failing"
+        }
+
+        if let usage, usage.weeklyResetIsOverdue(grace: weeklyResetDisplayGrace) {
+            if current.weeklyAutoKickAttemptCount > 0 {
+                if current.weeklyAutoKickAttemptCount >= weeklyAutoKickMaxAttempts {
+                    if let failure = current.lastWeeklyAutoKickFailure {
+                        return "Weekly auto-kick failed this cycle: \(failure)"
+                    }
+                    return "Weekly auto-kick failed this cycle"
+                }
+                return "Weekly auto-kick attempt \(current.weeklyAutoKickAttemptCount)/\(weeklyAutoKickMaxAttempts)"
+            }
+            return "Weekly auto-kick scheduled"
+        }
+
+        if let successAt = current.lastWeeklyAutoKickSuccessAt {
+            return "Weekly auto-kick activated \(successAt.relativeDescription)"
+        }
+
+        switch current.weeklyAutoKickOverride {
+        case .forceOn:
+            return "Weekly auto-kick always on"
+        case .forceOff:
+            return nil
+        case .inherit:
+            switch weeklyAutoKickMode {
+            case .off:
+                return nil
+            case .pinnedAccounts:
+                return current.isPinned ? "Weekly auto-kick follows pinned mode" : nil
+            case .allAccounts:
+                return "Weekly auto-kick follows global mode"
+            }
+        }
+    }
+
+    func evaluateWeeklyAutoKickCandidates(now: Date = Date()) async {
+        guard !isEvaluatingWeeklyAutoKick else { return }
+        guard !accounts.isEmpty else { return }
+
+        isEvaluatingWeeklyAutoKick = true
+        defer { isEvaluatingWeeklyAutoKick = false }
+
+        for account in accounts {
+            await evaluateWeeklyAutoKick(for: account.id, now: now)
+        }
+    }
+
+    private func evaluateWeeklyAutoKick(for accountID: String, now: Date) async {
+        guard let account = currentAccount(id: accountID) else { return }
+        guard isWeeklyAutoKickEnabled(for: account) else { return }
+        guard account.authState != .needsReauth, account.authState != .degraded else { return }
+        guard let usage = usageData[accountID], usage.hasWeeklyWindow else { return }
+        guard usage.weeklyResetIsOverdue(now: now, grace: weeklyAutoKickDelay) else { return }
+
+        let cycleID = usage.weeklyCycleIdentifier
+        if shouldPauseWeeklyAutoKick(account: account, cycleID: cycleID, now: now) {
+            return
+        }
+
+        await refreshAccount(account, trigger: .timer)
+
+        guard let refreshedAccount = currentAccount(id: accountID),
+              let refreshedUsage = usageData[accountID],
+              refreshedUsage.hasWeeklyWindow
+        else {
+            return
+        }
+
+        if !refreshedUsage.weeklyResetIsOverdue(now: now, grace: weeklyResetDisplayGrace) {
+            return
+        }
+
+        let refreshedCycleID = refreshedUsage.weeklyCycleIdentifier
+        if shouldPauseWeeklyAutoKick(account: refreshedAccount, cycleID: refreshedCycleID, now: now) {
+            return
+        }
+
+        await runWeeklyAutoKickAttempt(for: refreshedAccount, cycleID: refreshedCycleID, now: now)
+    }
+
+    private func shouldPauseWeeklyAutoKick(account: CodexAccount, cycleID: String?, now: Date) -> Bool {
+        if let cycleID,
+           account.lastWeeklyAutoKickCycleID == cycleID
+        {
+            if account.weeklyAutoKickAttemptCount >= weeklyAutoKickMaxAttempts {
+                return true
+            }
+            if let lastAttemptAt = account.lastWeeklyAutoKickAttemptAt,
+               now.timeIntervalSince(lastAttemptAt) < weeklyAutoKickRetryDelay
+            {
+                return true
+            }
+        }
+
+        return false
+    }
+
+    private func runWeeklyAutoKickAttempt(for account: CodexAccount, cycleID: String?, now: Date) async {
+        guard let attemptAccount = markWeeklyAutoKickAttempt(for: account.id, cycleID: cycleID, now: now) else { return }
+
+        let result = await TestMessageService.send(account: attemptAccount)
+        if !result.success {
+            recordWeeklyAutoKickFailure(for: account.id, message: result.message)
+            return
+        }
+
+        try? await Task.sleep(for: .seconds(weeklyAutoKickActivationDelay))
+        await refreshAccount(attemptAccount, trigger: .timer)
+
+        guard let updatedUsage = usageData[account.id], updatedUsage.hasWeeklyWindow else {
+            recordWeeklyAutoKickFailure(for: account.id, message: "Usage did not refresh after auto-kick")
+            return
+        }
+
+        if updatedUsage.weeklyResetIsOverdue(grace: weeklyResetDisplayGrace) {
+            recordWeeklyAutoKickFailure(for: account.id, message: "Weekly window still looks stale")
+            return
+        }
+
+        recordWeeklyAutoKickSuccess(for: account.id, at: Date())
+    }
+
     // MARK: - Auth UI Helpers
 
     func authStatusText(for account: CodexAccount) -> String {
@@ -820,6 +1024,53 @@ final class AccountsViewModel {
             staleAfter: staleSessionThreshold
         )
         return normalized
+    }
+
+    private func syncWeeklyObservation(for accountID: String, usage: AccountUsage) {
+        guard let idx = accounts.firstIndex(where: { $0.id == accountID }) else { return }
+
+        let observedResetAt = usage.weeklyResetAt
+        let previousObservedResetAt = accounts[idx].lastObservedWeeklyResetAt
+        guard observedResetAt != previousObservedResetAt else { return }
+
+        accounts[idx].lastObservedWeeklyResetAt = observedResetAt
+        accounts[idx].lastWeeklyAutoKickFailure = nil
+        accounts[idx].weeklyAutoKickAttemptCount = 0
+        if observedResetAt != nil {
+            accounts[idx].lastWeeklyAutoKickAttemptAt = nil
+        }
+        persistAccounts()
+    }
+
+    @discardableResult
+    private func markWeeklyAutoKickAttempt(for accountID: String, cycleID: String?, now: Date) -> CodexAccount? {
+        guard let idx = accounts.firstIndex(where: { $0.id == accountID }) else { return nil }
+
+        if accounts[idx].lastWeeklyAutoKickCycleID != cycleID {
+            accounts[idx].weeklyAutoKickAttemptCount = 0
+            accounts[idx].lastWeeklyAutoKickFailure = nil
+        }
+
+        accounts[idx].lastWeeklyAutoKickCycleID = cycleID
+        accounts[idx].lastWeeklyAutoKickAttemptAt = now
+        accounts[idx].weeklyAutoKickAttemptCount += 1
+        persistAccounts()
+        return accounts[idx]
+    }
+
+    private func recordWeeklyAutoKickFailure(for accountID: String, message: String) {
+        guard let idx = accounts.firstIndex(where: { $0.id == accountID }) else { return }
+        accounts[idx].lastWeeklyAutoKickFailure = message
+        persistAccounts()
+    }
+
+    private func recordWeeklyAutoKickSuccess(for accountID: String, at date: Date) {
+        guard let idx = accounts.firstIndex(where: { $0.id == accountID }) else { return }
+        accounts[idx].lastWeeklyAutoKickSuccessAt = date
+        accounts[idx].lastWeeklyAutoKickFailure = nil
+        accounts[idx].weeklyAutoKickAttemptCount = 0
+        accounts[idx].lastWeeklyAutoKickAttemptAt = nil
+        persistAccounts()
     }
 
     private func persistAccounts() {
@@ -862,7 +1113,14 @@ final class AccountsViewModel {
             consecutiveRefreshFailures: account.consecutiveRefreshFailures,
             authState: account.authState,
             addedAt: existing.addedAt,
-            isPinned: existing.isPinned
+            isPinned: existing.isPinned,
+            weeklyAutoKickOverride: existing.weeklyAutoKickOverride,
+            lastObservedWeeklyResetAt: existing.lastObservedWeeklyResetAt,
+            lastWeeklyAutoKickCycleID: existing.lastWeeklyAutoKickCycleID,
+            lastWeeklyAutoKickAttemptAt: existing.lastWeeklyAutoKickAttemptAt,
+            lastWeeklyAutoKickSuccessAt: existing.lastWeeklyAutoKickSuccessAt,
+            lastWeeklyAutoKickFailure: existing.lastWeeklyAutoKickFailure,
+            weeklyAutoKickAttemptCount: existing.weeklyAutoKickAttemptCount
         )
         return normalizedAccountOnLoad(preserved)
     }
