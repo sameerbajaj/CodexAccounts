@@ -80,6 +80,7 @@ struct CodexAccount: Identifiable, Codable, Hashable {
     var authState: AuthState
     let addedAt: Date
     var isPinned: Bool
+    var pinnedOrder: Int?
     var weeklyAutoKickOverride: WeeklyAutoKickOverride
     var lastObservedWeeklyResetAt: Date?
     var lastWeeklyAutoKickCycleID: String?
@@ -94,7 +95,7 @@ struct CodexAccount: Identifiable, Codable, Hashable {
         case lastSuccessfulUsageAt, lastSuccessfulTokenRefreshAt
         case lastRefreshAttemptAt, lastRefreshFailureAt
         case consecutiveRefreshFailures, authState
-        case addedAt, isPinned
+        case addedAt, isPinned, pinnedOrder
         case weeklyAutoKickOverride, lastObservedWeeklyResetAt
         case lastWeeklyAutoKickCycleID, lastWeeklyAutoKickAttemptAt
         case lastWeeklyAutoKickSuccessAt, lastWeeklyAutoKickFailure
@@ -117,6 +118,7 @@ struct CodexAccount: Identifiable, Codable, Hashable {
         authState: AuthState = .healthy,
         addedAt: Date = Date(),
         isPinned: Bool = false,
+        pinnedOrder: Int? = nil,
         weeklyAutoKickOverride: WeeklyAutoKickOverride = .inherit,
         lastObservedWeeklyResetAt: Date? = nil,
         lastWeeklyAutoKickCycleID: String? = nil,
@@ -141,6 +143,7 @@ struct CodexAccount: Identifiable, Codable, Hashable {
         self.authState = authState
         self.addedAt = addedAt
         self.isPinned = isPinned
+        self.pinnedOrder = pinnedOrder
         self.weeklyAutoKickOverride = weeklyAutoKickOverride
         self.lastObservedWeeklyResetAt = lastObservedWeeklyResetAt
         self.lastWeeklyAutoKickCycleID = lastWeeklyAutoKickCycleID
@@ -168,6 +171,7 @@ struct CodexAccount: Identifiable, Codable, Hashable {
         authState = (try? c.decode(AuthState.self, forKey: .authState)) ?? .healthy
         addedAt = try c.decode(Date.self, forKey: .addedAt)
         isPinned = (try? c.decode(Bool.self, forKey: .isPinned)) ?? false
+        pinnedOrder = try c.decodeIfPresent(Int.self, forKey: .pinnedOrder)
         weeklyAutoKickOverride = (try? c.decode(WeeklyAutoKickOverride.self, forKey: .weeklyAutoKickOverride)) ?? .inherit
         lastObservedWeeklyResetAt = try c.decodeIfPresent(Date.self, forKey: .lastObservedWeeklyResetAt)
         lastWeeklyAutoKickCycleID = try c.decodeIfPresent(String.self, forKey: .lastWeeklyAutoKickCycleID)

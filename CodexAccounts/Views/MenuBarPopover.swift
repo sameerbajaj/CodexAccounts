@@ -7,6 +7,7 @@
 
 import SwiftUI
 import AppKit
+import UniformTypeIdentifiers
 
 // MARK: - Tab Enum
 
@@ -27,6 +28,7 @@ private enum PopoverTab: String, CaseIterable, Identifiable {
 struct MenuBarPopover: View {
     @Bindable var viewModel: AccountsViewModel
     @State private var selectedTab: PopoverTab = .accounts
+    @State private var draggedPinnedAccountID: String? = nil
 
     var body: some View {
         VStack(spacing: 0) {
@@ -286,7 +288,7 @@ struct MenuBarPopover: View {
 
             VStack(spacing: 4) {
                 ForEach(viewModel.displayedAccounts) { account in
-                    AccountCardView(
+                    let card = AccountCardView(
                         account: account,
                         usage: viewModel.usageData[account.id],
                         usageDetailMode: viewModel.usageDetailMode,
@@ -300,13 +302,32 @@ struct MenuBarPopover: View {
                         onSetWeeklyAutoKickOverride: { viewModel.setWeeklyAutoKickOverride($0, for: account) },
                         isTestingMessage: viewModel.testMessageLoading.contains(account.id),
                         testResult: viewModel.testMessageResults[account.id],
-                        weeklyAutoKickEnabled: viewModel.isWeeklyAutoKickEnabled(for: account),
                         weeklyAutoKickOverride: viewModel.weeklyAutoKickOverride(for: account),
-                        weeklyAutoKickStatusText: viewModel.weeklyAutoKickStatusText(
+                        weeklyAutoKickIndicator: viewModel.weeklyAutoKickIndicator(
                             for: account,
                             usage: viewModel.usageData[account.id]
                         )
                     )
+
+                    if account.isPinned {
+                        card
+                            .onDrag {
+                                draggedPinnedAccountID = account.id
+                                return NSItemProvider(object: account.id as NSString)
+                            }
+                            .onDrop(
+                                of: [UTType.text],
+                                delegate: PinnedAccountDropDelegate(
+                                    targetAccountID: account.id,
+                                    draggedPinnedAccountID: $draggedPinnedAccountID,
+                                    onMove: { draggedID, targetID in
+                                        viewModel.movePinnedAccount(draggedID, before: targetID)
+                                    }
+                                )
+                            )
+                    } else {
+                        card
+                    }
                 }
             }
             .padding(.horizontal, 8)
@@ -718,4 +739,29 @@ struct MenuBarPopover: View {
         .padding(.horizontal, 16)
         .padding(.vertical, 10)
     }
+}
+
+private struct PinnedAccountDropDelegate: DropDelegate {
+    let targetAccountID: String
+    @Binding var draggedPinnedAccountID: String?
+    let onMove: (String, String) -> Void
+
+    func dropUpdated(info: DropInfo) -> DropProposal? {
+        DropProposal(operation: .move)
+    }
+
+    func performDrop(info: DropInfo) -> Bool {
+        guard let draggedPinnedAccountID else { return false }
+        onMove(draggedPinnedAccountID, targetAccountID)
+        self.draggedPinnedAccountID = nil
+        return true
+    }
+
+    func dropEntered(info: DropInfo) {
+        guard let draggedPinnedAccountID, draggedPinnedAccountID != targetAccountID else { return }
+        onMove(draggedPinnedAccountID, targetAccountID)
+        self.draggedPinnedAccountID = targetAccountID
+    }
+
+    func dropExited(info: DropInfo) {}
 }

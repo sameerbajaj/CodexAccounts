@@ -21,14 +21,12 @@ struct AccountCardView: View {
     let onSetWeeklyAutoKickOverride: (WeeklyAutoKickOverride) -> Void
     let isTestingMessage: Bool
     let testResult: TestMessageResult?
-    let weeklyAutoKickEnabled: Bool
     let weeklyAutoKickOverride: WeeklyAutoKickOverride
-    let weeklyAutoKickStatusText: String?
+    let weeklyAutoKickIndicator: AccountsViewModel.WeeklyAutoKickIndicator?
 
     @State private var isHovering = false
 
     private var showStateRow: Bool {
-        if weeklyAutoKickStatusText != nil { return true }
         if case .active = status, account.authState == .healthy { return false }
         return true
     }
@@ -57,12 +55,6 @@ struct AccountCardView: View {
                     stateRow
                         .padding(.horizontal, 10)
                         .padding(.top, 6)
-                }
-
-                if let weeklyAutoKickStatusText {
-                    autoKickRow(weeklyAutoKickStatusText)
-                        .padding(.horizontal, 10)
-                        .padding(.top, showStateRow ? 4 : 6)
                 }
 
                 if let usage {
@@ -137,8 +129,14 @@ struct AccountCardView: View {
 
             PlanBadge(plan: account.planType)
 
-            if account.authState != .healthy {
-                authBadge
+            authIndicator
+
+            if let weeklyAutoKickIndicator {
+                statusIcon(
+                    systemName: weeklyAutoKickIndicator.symbol,
+                    color: weeklyAutoKickIndicator.color,
+                    help: weeklyAutoKickIndicator.help
+                )
             }
 
             contextMenu
@@ -182,17 +180,15 @@ struct AccountCardView: View {
         .fixedSize()
     }
 
-    private var authBadge: some View {
-        Text(account.authState.displayName)
-            .font(.system(size: 8, weight: .bold, design: .rounded))
-            .foregroundStyle(authBadgeTextColor)
-            .padding(.horizontal, 5)
-            .padding(.vertical, 2.5)
-            .background(Capsule().fill(authBadgeColor.opacity(0.18)))
-            .overlay(
-                Capsule()
-                    .stroke(authBadgeColor.opacity(0.35), lineWidth: 0.7)
-            )
+    private var authIndicator: some View {
+        statusIcon(systemName: authIconName, color: authBadgeColor, help: authHelpText)
+    }
+
+    private func statusIcon(systemName: String, color: Color, help: String) -> some View {
+        Image(systemName: systemName)
+            .font(.system(size: 10, weight: .semibold))
+            .foregroundStyle(color.opacity(0.95))
+            .help(help)
     }
 
     // MARK: - Usage Rows
@@ -327,19 +323,6 @@ struct AccountCardView: View {
         }
     }
 
-    private func autoKickRow(_ text: String) -> some View {
-        HStack(spacing: 6) {
-            Image(systemName: weeklyAutoKickEnabled ? "bolt.fill" : "bolt.slash")
-                .font(.system(size: 8.5))
-                .foregroundStyle(weeklyAutoKickEnabled ? Color.cyan.opacity(0.95) : Color.white.opacity(0.55))
-            Text(text)
-                .font(.system(size: 9))
-                .foregroundStyle(Color.white.opacity(0.72))
-                .lineLimit(2)
-            Spacer()
-        }
-    }
-
     // MARK: - Reauth Row
 
     private var stateRow: some View {
@@ -452,8 +435,35 @@ struct AccountCardView: View {
         }
     }
 
-    private var authBadgeTextColor: Color {
-        account.authState == .healthy ? Color.green.opacity(0.95) : authBadgeColor.opacity(0.95)
+    private var authIconName: String {
+        switch account.authState {
+        case .healthy: return "checkmark.circle.fill"
+        case .stale: return "clock.badge.exclamationmark"
+        case .degraded: return "exclamationmark.circle.fill"
+        case .needsReauth: return "xmark.circle.fill"
+        }
+    }
+
+    private var authHelpText: String {
+        switch account.authState {
+        case .healthy:
+            if let date = account.lastAuthValidationAt {
+                return "Auth OK \(date.relativeDescription)"
+            }
+            return "Auth OK"
+        case .stale:
+            if let date = account.lastAuthValidationAt {
+                return "Auth stale since \(date.relativeDescription)"
+            }
+            return "Auth stale"
+        case .degraded:
+            if let date = account.lastRefreshFailureAt {
+                return "Refresh failing \(date.relativeDescription)"
+            }
+            return "Refresh failing"
+        case .needsReauth:
+            return "Session expired"
+        }
     }
 
     private var cardBackground: some View {

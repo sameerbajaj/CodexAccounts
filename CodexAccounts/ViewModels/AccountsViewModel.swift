@@ -12,6 +12,12 @@ import SwiftUI
 @MainActor
 @Observable
 final class AccountsViewModel {
+    struct WeeklyAutoKickIndicator {
+        let symbol: String
+        let color: Color
+        let help: String
+    }
+
     // MARK: - Published State
 
     var accounts: [CodexAccount] = []
@@ -52,7 +58,10 @@ final class AccountsViewModel {
         didSet { UserDefaults.standard.set(autoCheckUpdatesOnLaunch, forKey: "autoCheckUpdatesOnLaunch") }
     }
     var weeklyAutoKickMode: WeeklyAutoKickMode = .off {
-        didSet { UserDefaults.standard.set(weeklyAutoKickMode.rawValue, forKey: "weeklyAutoKickMode") }
+        didSet {
+            UserDefaults.standard.set(weeklyAutoKickMode.rawValue, forKey: "weeklyAutoKickMode")
+            rebuildWeeklyAutoKickSchedule()
+        }
     }
 
     // MARK: - Sort
@@ -169,6 +178,7 @@ final class AccountsViewModel {
     private let addAccountWatcher = AuthFileWatcher()
     private var lifecycleObservers: [NSObjectProtocol] = []
     private var frozenAccountOrder: [String]? = nil
+    private var weeklyAutoKickNextCheckAt: [String: Date] = [:]
     private var activeRefreshCount = 0
     private var isAuditingSessions = false
     private var isEvaluatingWeeklyAutoKick = false
@@ -185,6 +195,11 @@ final class AccountsViewModel {
     private let weeklyAutoKickActivationDelay: TimeInterval = 8
     private let weeklyAutoKickMaxAttempts = 3
     private let weeklyResetDisplayGrace: TimeInterval = 60
+    private let weeklyAutoKickNearResetThreshold: TimeInterval = 24 * 60 * 60
+    private let weeklyAutoKickSoonThreshold: TimeInterval = 60 * 60
+    private let weeklyAutoKickFarInterval: TimeInterval = 12 * 60 * 60
+    private let weeklyAutoKickNearResetInterval: TimeInterval = 60 * 60
+    private let weeklyAutoKickSoonInterval: TimeInterval = 15 * 60
     private let importCodexHome = "\(NSHomeDirectory())/.codex-accounts-import"
 
     // MARK: - Init
@@ -218,7 +233,14 @@ final class AccountsViewModel {
     // MARK: - Computed
 
     var sortedAccounts: [CodexAccount] {
-        let pinned = accounts.filter(\.isPinned)
+        let pinned = accounts
+            .filter(\.isPinned)
+            .sorted { a, b in
+                let ao = a.pinnedOrder ?? Int.max
+                let bo = b.pinnedOrder ?? Int.max
+                if ao != bo { return ao < bo }
+                return a.addedAt < b.addedAt
+            }
         let unpinned = accounts.filter { !$0.isPinned }
 
         let sortedUnpinned: [CodexAccount]
@@ -297,6 +319,7 @@ final class AccountsViewModel {
         hasSetup = true
 
         accounts = AccountStore.load().map(normalizedAccountOnLoad)
+        normalizePinnedOrder()
         applyAccountStates()
         syncCurrentAuthFile()
 
@@ -386,6 +409,7 @@ final class AccountsViewModel {
                 newUsage.lastActivityAt = previousUsage?.lastActivityAt
             }
             usageData[account.id] = newUsage
+            scheduleNextWeeklyAutoKickCheck(for: account.id, usage: newUsage, now: Date())
             syncWeeklyObservation(for: account.id, usage: newUsage)
 
             let persisted = mergeAccount(result.updatedAccount ?? CodexAPIService.markUsageSuccess(for: accountForUsage))
@@ -759,6 +783,8 @@ final class AccountsViewModel {
         accounts.removeAll { $0.id == account.id }
         usageData.removeValue(forKey: account.id)
         accountStatuses.removeValue(forKey: account.id)
+        weeklyAutoKickNextCheckAt.removeValue(forKey: account.id)
+        normalizePinnedOrder()
         persistAccounts()
     }
 
@@ -786,6 +812,44 @@ final class AccountsViewModel {
     func togglePin(_ account: CodexAccount) {
         guard let idx = accounts.firstIndex(where: { $0.id == account.id }) else { return }
         accounts[idx].isPinned.toggle()
+        if accounts[idx].isPinned {
+            accounts[idx].pinnedOrder = nextPinnedOrder()
+        } else {
+            accounts[idx].pinnedOrder = nil
+        }
+        normalizePinnedOrder()
+        rebuildWeeklyAutoKickSchedule()
+        persistAccounts()
+    }
+
+    func movePinnedAccount(_ draggedID: String, before targetID: String) {
+        guard draggedID != targetID else { return }
+        let pinned = accounts
+            .filter(\.isPinned)
+            .sorted { a, b in
+                let ao = a.pinnedOrder ?? Int.max
+                let bo = b.pinnedOrder ?? Int.max
+                if ao != bo { return ao < bo }
+                return a.addedAt < b.addedAt
+            }
+        guard let fromIndex = pinned.firstIndex(where: { $0.id == draggedID }),
+              let toIndex = pinned.firstIndex(where: { $0.id == targetID })
+        else {
+            return
+        }
+
+        var reordered = pinned
+        let dragged = reordered.remove(at: fromIndex)
+        let adjustedIndex = fromIndex < toIndex ? max(0, toIndex - 1) : toIndex
+        reordered.insert(dragged, at: adjustedIndex)
+
+        for (order, pinnedAccount) in reordered.enumerated() {
+            if let idx = accounts.firstIndex(where: { $0.id == pinnedAccount.id }) {
+                accounts[idx].pinnedOrder = order
+            }
+        }
+
+        normalizePinnedOrder()
         persistAccounts()
     }
 
@@ -821,6 +885,7 @@ final class AccountsViewModel {
     func setWeeklyAutoKickOverride(_ overrideValue: WeeklyAutoKickOverride, for account: CodexAccount) {
         guard let idx = accounts.firstIndex(where: { $0.id == account.id }) else { return }
         accounts[idx].weeklyAutoKickOverride = overrideValue
+        rebuildWeeklyAutoKickSchedule()
         persistAccounts()
     }
 
@@ -847,46 +912,110 @@ final class AccountsViewModel {
         }
     }
 
-    func weeklyAutoKickStatusText(for account: CodexAccount, usage: AccountUsage?) -> String? {
+    func weeklyAutoKickIndicator(for account: CodexAccount, usage: AccountUsage?) -> WeeklyAutoKickIndicator? {
         let current = currentAccount(id: account.id) ?? account
+        let now = Date()
 
         if !isWeeklyAutoKickEnabled(for: current) {
             if let failure = current.lastWeeklyAutoKickFailure,
                current.weeklyAutoKickAttemptCount >= weeklyAutoKickMaxAttempts
             {
-                return "Weekly auto-kick failed this cycle: \(failure)"
+                return WeeklyAutoKickIndicator(
+                    symbol: "bolt.trianglebadge.exclamationmark.fill",
+                    color: .orange,
+                    help: "Weekly auto-kick failed this cycle: \(failure)"
+                )
             }
             return nil
         }
 
         if current.authState == .needsReauth {
-            return "Weekly auto-kick unavailable until re-authenticated"
+            return WeeklyAutoKickIndicator(
+                symbol: "bolt.slash.fill",
+                color: .red,
+                help: "Weekly auto-kick unavailable until re-authenticated"
+            )
         }
 
         if current.authState == .degraded {
-            return "Weekly auto-kick paused while refresh is failing"
+            return WeeklyAutoKickIndicator(
+                symbol: "bolt.slash.fill",
+                color: .orange,
+                help: "Weekly auto-kick paused while refresh is failing"
+            )
         }
 
-        if let usage, usage.weeklyResetIsOverdue(grace: weeklyResetDisplayGrace) {
+        if let usage {
             if current.weeklyAutoKickAttemptCount > 0 {
                 if current.weeklyAutoKickAttemptCount >= weeklyAutoKickMaxAttempts {
                     if let failure = current.lastWeeklyAutoKickFailure {
-                        return "Weekly auto-kick failed this cycle: \(failure)"
+                        return WeeklyAutoKickIndicator(
+                            symbol: "bolt.trianglebadge.exclamationmark.fill",
+                            color: .orange,
+                            help: "Weekly auto-kick failed this cycle: \(failure)"
+                        )
                     }
-                    return "Weekly auto-kick failed this cycle"
+                    return WeeklyAutoKickIndicator(
+                        symbol: "bolt.trianglebadge.exclamationmark.fill",
+                        color: .orange,
+                        help: "Weekly auto-kick failed this cycle"
+                    )
                 }
-                return "Weekly auto-kick attempt \(current.weeklyAutoKickAttemptCount)/\(weeklyAutoKickMaxAttempts)"
+
+                let retryDate = current.lastWeeklyAutoKickAttemptAt?.addingTimeInterval(weeklyAutoKickRetryDelay)
+                let retrySuffix = retryDate.map { ", retry \($0.resetDescription)" } ?? ""
+                return WeeklyAutoKickIndicator(
+                    symbol: "bolt.circle.fill",
+                    color: .cyan,
+                    help: "Weekly auto-kick attempt \(current.weeklyAutoKickAttemptCount)/\(weeklyAutoKickMaxAttempts)\(retrySuffix)"
+                )
             }
-            return "Weekly auto-kick scheduled"
+
+            if usage.weeklyResetIsOverdue(now: now, grace: weeklyAutoKickDelay) {
+                return WeeklyAutoKickIndicator(
+                    symbol: "bolt.circle.fill",
+                    color: .cyan,
+                    help: "Weekly auto-kick is actively watching this overdue weekly reset"
+                )
+            }
+
+            if let weeklyResetAt = usage.weeklyResetAt {
+                let secondsUntilReset = weeklyResetAt.timeIntervalSince(now)
+                if secondsUntilReset <= weeklyAutoKickSoonThreshold {
+                    return WeeklyAutoKickIndicator(
+                        symbol: "bolt.circle",
+                        color: .cyan.opacity(0.95),
+                        help: "Weekly auto-kick is watching closely before reset"
+                    )
+                }
+                if secondsUntilReset <= weeklyAutoKickNearResetThreshold {
+                    return WeeklyAutoKickIndicator(
+                        symbol: "bolt.circle",
+                        color: .blue.opacity(0.95),
+                        help: "Weekly auto-kick is armed for this account and will ramp up closer to reset"
+                    )
+                }
+            }
         }
 
-        if let successAt = current.lastWeeklyAutoKickSuccessAt {
-            return "Weekly auto-kick activated \(successAt.relativeDescription)"
+        if let successAt = current.lastWeeklyAutoKickSuccessAt,
+           let usage,
+           usage.weeklyResetAt == current.lastObservedWeeklyResetAt
+        {
+            return WeeklyAutoKickIndicator(
+                symbol: "bolt.badge.checkmark",
+                color: .green,
+                help: "Weekly auto-kick activated \(successAt.relativeDescription)"
+            )
         }
 
         switch current.weeklyAutoKickOverride {
         case .forceOn:
-            return "Weekly auto-kick always on"
+            return WeeklyAutoKickIndicator(
+                symbol: "bolt.badge.checkmark",
+                color: .green.opacity(0.95),
+                help: "Weekly auto-kick is enabled for this account"
+            )
         case .forceOff:
             return nil
         case .inherit:
@@ -894,9 +1023,19 @@ final class AccountsViewModel {
             case .off:
                 return nil
             case .pinnedAccounts:
-                return current.isPinned ? "Weekly auto-kick follows pinned mode" : nil
+                return current.isPinned
+                    ? WeeklyAutoKickIndicator(
+                        symbol: "bolt.badge.checkmark",
+                        color: .green.opacity(0.95),
+                        help: "Weekly auto-kick follows the pinned-accounts setting"
+                    )
+                    : nil
             case .allAccounts:
-                return "Weekly auto-kick follows global mode"
+                return WeeklyAutoKickIndicator(
+                    symbol: "bolt.badge.checkmark",
+                    color: .green.opacity(0.95),
+                    help: "Weekly auto-kick follows the global setting"
+                )
             }
         }
     }
@@ -909,19 +1048,38 @@ final class AccountsViewModel {
         defer { isEvaluatingWeeklyAutoKick = false }
 
         for account in accounts {
+            if let nextCheckAt = weeklyAutoKickNextCheckAt[account.id],
+               nextCheckAt > now
+            {
+                continue
+            }
             await evaluateWeeklyAutoKick(for: account.id, now: now)
         }
     }
 
     private func evaluateWeeklyAutoKick(for accountID: String, now: Date) async {
         guard let account = currentAccount(id: accountID) else { return }
-        guard isWeeklyAutoKickEnabled(for: account) else { return }
-        guard account.authState != .needsReauth, account.authState != .degraded else { return }
-        guard let usage = usageData[accountID], usage.hasWeeklyWindow else { return }
-        guard usage.weeklyResetIsOverdue(now: now, grace: weeklyAutoKickDelay) else { return }
+        guard isWeeklyAutoKickEnabled(for: account) else {
+            weeklyAutoKickNextCheckAt.removeValue(forKey: accountID)
+            return
+        }
+        guard account.authState != .needsReauth, account.authState != .degraded else {
+            weeklyAutoKickNextCheckAt.removeValue(forKey: accountID)
+            return
+        }
+        guard let usage = usageData[accountID], usage.hasWeeklyWindow else {
+            weeklyAutoKickNextCheckAt.removeValue(forKey: accountID)
+            return
+        }
+
+        if !usage.weeklyResetIsOverdue(now: now, grace: weeklyAutoKickDelay) {
+            scheduleNextWeeklyAutoKickCheck(for: accountID, usage: usage, now: now)
+            return
+        }
 
         let cycleID = usage.weeklyCycleIdentifier
         if shouldPauseWeeklyAutoKick(account: account, cycleID: cycleID, now: now) {
+            scheduleRetryWeeklyAutoKickCheck(for: accountID, account: account, now: now)
             return
         }
 
@@ -931,15 +1089,18 @@ final class AccountsViewModel {
               let refreshedUsage = usageData[accountID],
               refreshedUsage.hasWeeklyWindow
         else {
+            weeklyAutoKickNextCheckAt.removeValue(forKey: accountID)
             return
         }
 
         if !refreshedUsage.weeklyResetIsOverdue(now: now, grace: weeklyResetDisplayGrace) {
+            scheduleNextWeeklyAutoKickCheck(for: accountID, usage: refreshedUsage, now: now)
             return
         }
 
         let refreshedCycleID = refreshedUsage.weeklyCycleIdentifier
         if shouldPauseWeeklyAutoKick(account: refreshedAccount, cycleID: refreshedCycleID, now: now) {
+            scheduleRetryWeeklyAutoKickCheck(for: accountID, account: refreshedAccount, now: now)
             return
         }
 
@@ -969,6 +1130,9 @@ final class AccountsViewModel {
         let result = await TestMessageService.send(account: attemptAccount)
         if !result.success {
             recordWeeklyAutoKickFailure(for: account.id, message: result.message)
+            if let updatedAccount = currentAccount(id: account.id) {
+                scheduleRetryWeeklyAutoKickCheck(for: account.id, account: updatedAccount, now: now)
+            }
             return
         }
 
@@ -977,15 +1141,22 @@ final class AccountsViewModel {
 
         guard let updatedUsage = usageData[account.id], updatedUsage.hasWeeklyWindow else {
             recordWeeklyAutoKickFailure(for: account.id, message: "Usage did not refresh after auto-kick")
+            if let updatedAccount = currentAccount(id: account.id) {
+                scheduleRetryWeeklyAutoKickCheck(for: account.id, account: updatedAccount, now: now)
+            }
             return
         }
 
         if updatedUsage.weeklyResetIsOverdue(grace: weeklyResetDisplayGrace) {
             recordWeeklyAutoKickFailure(for: account.id, message: "Weekly window still looks stale")
+            if let updatedAccount = currentAccount(id: account.id) {
+                scheduleRetryWeeklyAutoKickCheck(for: account.id, account: updatedAccount, now: now)
+            }
             return
         }
 
         recordWeeklyAutoKickSuccess(for: account.id, at: Date())
+        scheduleNextWeeklyAutoKickCheck(for: account.id, usage: updatedUsage, now: Date())
     }
 
     // MARK: - Auth UI Helpers
@@ -1019,6 +1190,9 @@ final class AccountsViewModel {
         if normalized.lastSuccessfulTokenRefreshAt == nil {
             normalized.lastSuccessfulTokenRefreshAt = normalized.lastTokenRefresh
         }
+        if !normalized.isPinned {
+            normalized.pinnedOrder = nil
+        }
         normalized = CodexAPIService.markStaleIfNeeded(
             for: normalized,
             staleAfter: staleSessionThreshold
@@ -1039,6 +1213,7 @@ final class AccountsViewModel {
         if observedResetAt != nil {
             accounts[idx].lastWeeklyAutoKickAttemptAt = nil
         }
+        scheduleNextWeeklyAutoKickCheck(for: accountID, usage: usage, now: Date())
         persistAccounts()
     }
 
@@ -1073,8 +1248,91 @@ final class AccountsViewModel {
         persistAccounts()
     }
 
+    private func scheduleNextWeeklyAutoKickCheck(for accountID: String, usage: AccountUsage, now: Date) {
+        guard let account = currentAccount(id: accountID) else {
+            weeklyAutoKickNextCheckAt.removeValue(forKey: accountID)
+            return
+        }
+
+        guard isWeeklyAutoKickEnabled(for: account) else {
+            weeklyAutoKickNextCheckAt.removeValue(forKey: accountID)
+            return
+        }
+
+        guard let weeklyResetAt = usage.weeklyResetAt else {
+            weeklyAutoKickNextCheckAt.removeValue(forKey: accountID)
+            return
+        }
+
+        let secondsUntilReset = weeklyResetAt.timeIntervalSince(now)
+        let nextCheckAt: Date
+
+        if secondsUntilReset <= -weeklyAutoKickDelay {
+            nextCheckAt = now.addingTimeInterval(weeklyAutoKickInterval)
+        } else if secondsUntilReset <= 0 {
+            nextCheckAt = weeklyResetAt.addingTimeInterval(weeklyAutoKickDelay)
+        } else if secondsUntilReset <= weeklyAutoKickSoonThreshold {
+            nextCheckAt = now.addingTimeInterval(weeklyAutoKickSoonInterval)
+        } else if secondsUntilReset <= weeklyAutoKickNearResetThreshold {
+            nextCheckAt = now.addingTimeInterval(weeklyAutoKickNearResetInterval)
+        } else {
+            nextCheckAt = now.addingTimeInterval(weeklyAutoKickFarInterval)
+        }
+
+        weeklyAutoKickNextCheckAt[accountID] = nextCheckAt
+    }
+
+    private func scheduleRetryWeeklyAutoKickCheck(for accountID: String, account: CodexAccount, now: Date) {
+        if account.weeklyAutoKickAttemptCount >= weeklyAutoKickMaxAttempts {
+            weeklyAutoKickNextCheckAt.removeValue(forKey: accountID)
+            return
+        }
+
+        if let lastAttemptAt = account.lastWeeklyAutoKickAttemptAt {
+            weeklyAutoKickNextCheckAt[accountID] = lastAttemptAt.addingTimeInterval(weeklyAutoKickRetryDelay)
+        } else {
+            weeklyAutoKickNextCheckAt[accountID] = now.addingTimeInterval(weeklyAutoKickRetryDelay)
+        }
+    }
+
+    private func rebuildWeeklyAutoKickSchedule(now: Date = Date()) {
+        for account in accounts {
+            guard let usage = usageData[account.id], usage.hasWeeklyWindow else {
+                weeklyAutoKickNextCheckAt.removeValue(forKey: account.id)
+                continue
+            }
+            scheduleNextWeeklyAutoKickCheck(for: account.id, usage: usage, now: now)
+        }
+    }
+
     private func persistAccounts() {
         AccountStore.save(accounts)
+    }
+
+    private func normalizePinnedOrder() {
+        let pinnedIDs = accounts
+            .filter(\.isPinned)
+            .sorted { a, b in
+                let ao = a.pinnedOrder ?? Int.max
+                let bo = b.pinnedOrder ?? Int.max
+                if ao != bo { return ao < bo }
+                return a.addedAt < b.addedAt
+            }
+            .map(\.id)
+
+        for (order, id) in pinnedIDs.enumerated() {
+            if let idx = accounts.firstIndex(where: { $0.id == id }) {
+                accounts[idx].pinnedOrder = order
+            }
+        }
+
+        for idx in accounts.indices where !accounts[idx].isPinned {
+            accounts[idx].pinnedOrder = nil
+        }
+    }
+
+    private func nextPinnedOrder() -> Int {
+        accounts.compactMap(\.pinnedOrder).max().map { $0 + 1 } ?? 0
     }
 
     private func currentAccount(id: String) -> CodexAccount? {
@@ -1114,6 +1372,7 @@ final class AccountsViewModel {
             authState: account.authState,
             addedAt: existing.addedAt,
             isPinned: existing.isPinned,
+            pinnedOrder: existing.pinnedOrder,
             weeklyAutoKickOverride: existing.weeklyAutoKickOverride,
             lastObservedWeeklyResetAt: existing.lastObservedWeeklyResetAt,
             lastWeeklyAutoKickCycleID: existing.lastWeeklyAutoKickCycleID,

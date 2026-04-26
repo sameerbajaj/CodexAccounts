@@ -134,6 +134,53 @@ struct CodexAccountsTests {
         #expect(!viewModel.isWeeklyAutoKickEnabled(for: forcedOff))
     }
 
+    @Test func pinnedAccountsRespectManualPinnedOrderBeforeSortedAccounts() async throws {
+        let viewModel = AccountsViewModel()
+        let firstPinned = makeAccount(
+            email: "first@example.com",
+            isPinned: true,
+            pinnedOrder: 1
+        )
+        let secondPinned = makeAccount(
+            email: "second@example.com",
+            isPinned: true,
+            pinnedOrder: 0
+        )
+        let unpinned = makeAccount(email: "third@example.com")
+
+        viewModel.accounts = [firstPinned, secondPinned, unpinned]
+
+        #expect(viewModel.sortedAccounts.map(\.email) == [
+            "second@example.com",
+            "first@example.com",
+            "third@example.com",
+        ])
+    }
+
+    @Test func movePinnedAccountReordersPinnedSectionOnly() async throws {
+        let viewModel = AccountsViewModel()
+        let firstPinned = makeAccount(
+            email: "first@example.com",
+            isPinned: true,
+            pinnedOrder: 0
+        )
+        let secondPinned = makeAccount(
+            email: "second@example.com",
+            isPinned: true,
+            pinnedOrder: 1
+        )
+        let unpinned = makeAccount(email: "third@example.com")
+
+        viewModel.accounts = [firstPinned, secondPinned, unpinned]
+        viewModel.movePinnedAccount("second@example.com", before: "first@example.com")
+
+        #expect(viewModel.sortedAccounts.map(\.email) == [
+            "second@example.com",
+            "first@example.com",
+            "third@example.com",
+        ])
+    }
+
     private func makeAccount(
         email: String = "test@example.com",
         lastSuccessfulTokenRefreshAt: Date? = nil,
@@ -141,6 +188,7 @@ struct CodexAccountsTests {
         consecutiveRefreshFailures: Int = 0,
         authState: AuthState = .healthy,
         isPinned: Bool = false,
+        pinnedOrder: Int? = nil,
         weeklyAutoKickOverride: WeeklyAutoKickOverride = .inherit
     ) -> CodexAccount {
         CodexAccount(
@@ -156,6 +204,7 @@ struct CodexAccountsTests {
             authState: authState,
             addedAt: Date(timeIntervalSince1970: 0),
             isPinned: isPinned,
+            pinnedOrder: pinnedOrder,
             weeklyAutoKickOverride: weeklyAutoKickOverride
         )
     }
