@@ -134,6 +134,42 @@ struct CodexAccountsTests {
         #expect(!viewModel.isWeeklyAutoKickEnabled(for: forcedOff))
     }
 
+    @Test func freshWeeklyResetShowsActivationPendingForEligibleAccount() async throws {
+        let viewModel = AccountsViewModel()
+        let account = makeAccount(weeklyAutoKickOverride: .forceOn)
+        let usage = makeUsage(
+            weeklyUsedPercent: 0,
+            weeklyResetAt: Date().addingTimeInterval(7 * 24 * 60 * 60 - 30 * 60)
+        )
+
+        viewModel.accounts = [account]
+        viewModel.usageData[account.id] = usage
+
+        let indicator = viewModel.weeklyAutoKickIndicator(for: account, usage: usage)
+
+        #expect(indicator?.help == "Fresh weekly reset detected. Activation pending.")
+    }
+
+    @Test func freshWeeklyResetDoesNotShowPendingAfterCycleAttemptRecorded() async throws {
+        let resetAt = Date().addingTimeInterval(7 * 24 * 60 * 60 - 30 * 60)
+        let usage = makeUsage(
+            weeklyUsedPercent: 0,
+            weeklyResetAt: resetAt
+        )
+        let account = makeAccount(
+            weeklyAutoKickOverride: .forceOn,
+            lastWeeklyAutoKickCycleID: String(Int(resetAt.timeIntervalSince1970))
+        )
+        let viewModel = AccountsViewModel()
+
+        viewModel.accounts = [account]
+        viewModel.usageData[account.id] = usage
+
+        let indicator = viewModel.weeklyAutoKickIndicator(for: account, usage: usage)
+
+        #expect(indicator?.help != "Fresh weekly reset detected. Activation pending.")
+    }
+
     @Test func pinnedAccountsRespectManualPinnedOrderBeforeSortedAccounts() async throws {
         let viewModel = AccountsViewModel()
         let firstPinned = makeAccount(
@@ -189,7 +225,8 @@ struct CodexAccountsTests {
         authState: AuthState = .healthy,
         isPinned: Bool = false,
         pinnedOrder: Int? = nil,
-        weeklyAutoKickOverride: WeeklyAutoKickOverride = .inherit
+        weeklyAutoKickOverride: WeeklyAutoKickOverride = .inherit,
+        lastWeeklyAutoKickCycleID: String? = nil
     ) -> CodexAccount {
         CodexAccount(
             email: email,
@@ -205,7 +242,28 @@ struct CodexAccountsTests {
             addedAt: Date(timeIntervalSince1970: 0),
             isPinned: isPinned,
             pinnedOrder: pinnedOrder,
-            weeklyAutoKickOverride: weeklyAutoKickOverride
+            weeklyAutoKickOverride: weeklyAutoKickOverride,
+            lastWeeklyAutoKickCycleID: lastWeeklyAutoKickCycleID
+        )
+    }
+
+    private func makeUsage(
+        weeklyUsedPercent: Double,
+        weeklyResetAt: Date
+    ) -> AccountUsage {
+        AccountUsage(
+            usedPercent: weeklyUsedPercent,
+            resetAt: weeklyResetAt,
+            primaryWindowSeconds: 7 * 24 * 60 * 60,
+            weeklyUsedPercent: weeklyUsedPercent,
+            weeklyResetAt: weeklyResetAt,
+            weeklyWindowSeconds: 7 * 24 * 60 * 60,
+            creditsBalance: nil,
+            hasCredits: false,
+            isUnlimited: false,
+            lastUpdated: Date(),
+            error: nil,
+            lastActivityAt: nil
         )
     }
 
