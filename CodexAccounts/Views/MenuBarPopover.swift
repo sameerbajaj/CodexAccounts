@@ -69,6 +69,7 @@ struct MenuBarPopover: View {
                 status: viewModel.addAccountStatus,
                 authCommand: viewModel.addAccountCommand,
                 prompt: viewModel.addAccountPrompt,
+                onStartLogin: { viewModel.openCodexLogin() },
                 onCancel: { viewModel.cancelAdding() }
             )
             .transition(.opacity)

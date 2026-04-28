@@ -11,6 +11,7 @@ struct AddAccountView: View {
     let status: AccountsViewModel.AddAccountStatus
     let authCommand: String
     let prompt: String
+    let onStartLogin: () -> Void
     let onCancel: () -> Void
 
     var body: some View {
@@ -68,17 +69,45 @@ struct AddAccountView: View {
                 .foregroundStyle(Color.white.opacity(0.82))
                 .multilineTextAlignment(.center)
 
-            Text("Run the following in your terminal:")
-                .font(.system(size: 11))
-                .foregroundStyle(Color.white.opacity(0.64))
-                .multilineTextAlignment(.center)
+            Button(action: onStartLogin) {
+                Label("Open Codex Login", systemImage: "terminal")
+                    .font(.system(size: 12, weight: .semibold))
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 8)
+                    .frame(maxWidth: .infinity)
+                    .background(
+                        RoundedRectangle(cornerRadius: 8)
+                            .fill(Color.blue.opacity(0.28))
+                    )
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 8)
+                            .strokeBorder(Color.blue.opacity(0.55), lineWidth: 0.5)
+                    )
+            }
+            .buttonStyle(.plain)
+            .help("Opens Terminal and runs Codex login using this app's isolated auth folder.")
 
-            CommandBlock(
-                command: authCommand,
-                description: "Sign in without logging out of your main Codex session"
-            )
+            DisclosureGroup {
+                VStack(spacing: 8) {
+                    Text("If the button does not open Terminal, run this fallback command:")
+                        .font(.system(size: 10))
+                        .foregroundStyle(Color.white.opacity(0.58))
+                        .multilineTextAlignment(.center)
 
-            Text("This uses a separate Codex auth folder and creates it if needed, so existing saved accounts are not revoked.")
+                    CommandBlock(
+                        command: authCommand,
+                        description: "Sign in without logging out of your main Codex session"
+                    )
+                }
+                .padding(.top, 6)
+            } label: {
+                Text("Manual fallback")
+                    .font(.system(size: 10.5, weight: .medium))
+                    .foregroundStyle(Color.white.opacity(0.58))
+            }
+            .tint(Color.white.opacity(0.58))
+
+            Text("This uses an isolated Codex login for this app, so your normal terminal Codex session is not changed.")
                 .font(.system(size: 9.5))
                 .foregroundStyle(Color.white.opacity(0.52))
                 .multilineTextAlignment(.center)

@@ -293,7 +293,7 @@ final class AccountsViewModel {
     }
 
     var addAccountCommand: String {
-        "mkdir -p \"$HOME/.codex-accounts-import\" && CODEX_HOME=\"$HOME/.codex-accounts-import\" codex auth"
+        "CODEX_HOME=\"$HOME/.codex-accounts-import\" codex login"
     }
 
     var addAccountPrompt: String {
@@ -742,6 +742,23 @@ final class AccountsViewModel {
         addAccountWatcher.stop()
     }
 
+    func openCodexLogin() {
+        guard ensureImportCodexHomeExists() else {
+            addAccountStatus = .error("Could not prepare the Codex login folder.")
+            return
+        }
+
+        do {
+            let scriptURL = try makeCodexLoginScript()
+            let process = Process()
+            process.executableURL = URL(fileURLWithPath: "/usr/bin/open")
+            process.arguments = [scriptURL.path]
+            try process.run()
+        } catch {
+            addAccountStatus = .error("Could not open Codex login: \(error.localizedDescription)")
+        }
+    }
+
     private func handleAddAccountAuthFileChange() {
         Task {
             try? await Task.sleep(for: .milliseconds(500))
@@ -806,6 +823,31 @@ final class AccountsViewModel {
             print("AccountsViewModel: Failed to create import CODEX_HOME: \(error)")
             return false
         }
+    }
+
+    private func makeCodexLoginScript() throws -> URL {
+        let scriptURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("CodexAccountsLogin-\(UUID().uuidString).command")
+        let script = """
+        #!/bin/zsh
+        export CODEX_HOME=\(importCodexHome.shellQuoted)
+        mkdir -p "$CODEX_HOME"
+        echo "Codex Accounts"
+        echo "Signing in with an isolated Codex auth folder:"
+        echo "$CODEX_HOME"
+        echo ""
+        echo "Your normal terminal Codex login will not be changed."
+        echo ""
+        codex login
+        echo ""
+        echo "If login completed, you can close this window."
+        """
+        try script.write(to: scriptURL, atomically: true, encoding: .utf8)
+        try FileManager.default.setAttributes(
+            [.posixPermissions: 0o700],
+            ofItemAtPath: scriptURL.path
+        )
+        return scriptURL
     }
 
     // MARK: - Pinning
@@ -1619,5 +1661,11 @@ final class AccountsViewModel {
                 }
             }
         )
+    }
+}
+
+private extension String {
+    var shellQuoted: String {
+        "'\(replacingOccurrences(of: "'", with: "'\\''"))'"
     }
 }
