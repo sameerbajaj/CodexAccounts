@@ -27,7 +27,27 @@ enum TestMessageService {
     private static let fallbackResponsesURL = "https://chatgpt.com/backend-api/responses"
 
     static func send(account: CodexAccount) async -> TestMessageResult {
-        await sendViaAPI(account: account)
+        let cliResult = await sendViaCLI(account: account)
+        if cliResult.success {
+            return cliResult
+        }
+
+        guard shouldTryAPIAfterCLIFailure(cliResult.message) else {
+            return cliResult
+        }
+
+        let apiResult = await sendViaAPI(account: account)
+        if apiResult.success {
+            return apiResult
+        }
+
+        if isMissingResponsesWriteScope(apiResult.message) {
+            return .fail(
+                "Codex CLI could not run (\(cliResult.message)). The direct API fallback also failed because this ChatGPT/Codex login token does not have api.responses.write. Install or update the Codex CLI, then re-authenticate this account in Codex Accounts."
+            )
+        }
+
+        return apiResult
     }
 
     private static func sendViaCLI(account: CodexAccount) async -> TestMessageResult {
@@ -43,7 +63,7 @@ enum TestMessageService {
 
         do {
             try fm.createDirectory(at: codexHome, withIntermediateDirectories: true)
-            try writeAuthFile(account: account, to: authURL)
+            try writeCLIAuthFile(account: account, to: authURL)
         } catch {
             return .fail("Failed to prepare CLI auth: \(error.localizedDescription)")
         }
@@ -231,7 +251,19 @@ enum TestMessageService {
         }
     }
 
-    private static func writeAuthFile(account: CodexAccount, to url: URL) throws {
+    private static func writeCLIAuthFile(account: CodexAccount, to url: URL) throws {
+        if let codexAuthJSON = account.codexAuthJSON,
+           let data = codexAuthJSON.data(using: .utf8),
+           (try? JSONSerialization.jsonObject(with: data)) != nil
+        {
+            try data.write(to: url, options: .atomic)
+            return
+        }
+
+        try writeGeneratedAuthFile(account: account, to: url)
+    }
+
+    private static func writeGeneratedAuthFile(account: CodexAccount, to url: URL) throws {
         var tokenMap: [String: Any] = [
             "access_token": account.accessToken,
             "refresh_token": account.refreshToken,
@@ -399,6 +431,20 @@ enum TestMessageService {
             || lower.contains("auth")
             || lower.contains("401")
             || lower.contains("403")
+    }
+
+    private static func shouldTryAPIAfterCLIFailure(_ message: String) -> Bool {
+        let lower = message.lowercased()
+        return lower.contains("codex cli not found")
+            || lower.contains("failed to launch codex cli")
+            || lower.contains("failed to prepare cli auth")
+            || lower.contains("codex cli timed out")
+    }
+
+    private static func isMissingResponsesWriteScope(_ message: String) -> Bool {
+        let lower = message.lowercased()
+        return lower.contains("api.responses.write")
+            || (lower.contains("missing scopes") && lower.contains("responses"))
     }
 
     // MARK: - JSON Parsing Helpers

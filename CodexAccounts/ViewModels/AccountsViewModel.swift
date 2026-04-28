@@ -644,6 +644,7 @@ final class AccountsViewModel {
             existing.accessToken = authAccount.accessToken
             existing.refreshToken = authAccount.refreshToken
             existing.idToken = authAccount.idToken
+            existing.codexAuthJSON = authAccount.codexAuthJSON ?? existing.codexAuthJSON
             existing.lastTokenRefresh = authAccount.lastTokenRefresh ?? existing.lastTokenRefresh
             existing.lastSuccessfulTokenRefreshAt = authAccount.lastSuccessfulTokenRefreshAt
                 ?? authAccount.lastTokenRefresh
@@ -929,7 +930,7 @@ final class AccountsViewModel {
                 return WeeklyAutoKickIndicator(
                     symbol: "bolt.trianglebadge.exclamationmark.fill",
                     color: .orange,
-                    help: "Weekly auto-kick failed this cycle: \(failure)"
+                    help: "Weekly auto-kick failed this cycle: \(weeklyAutoKickFailureHelp(failure))"
                 )
             }
             return nil
@@ -958,7 +959,7 @@ final class AccountsViewModel {
                         return WeeklyAutoKickIndicator(
                             symbol: "bolt.trianglebadge.exclamationmark.fill",
                             color: .orange,
-                            help: "Weekly auto-kick failed this cycle: \(failure)"
+                            help: "Weekly auto-kick failed this cycle: \(weeklyAutoKickFailureHelp(failure))"
                         )
                     }
                     return WeeklyAutoKickIndicator(
@@ -1086,7 +1087,7 @@ final class AccountsViewModel {
                 return WeeklyAutoKickIndicator(
                     symbol: "bolt.trianglebadge.exclamationmark.fill",
                     color: .orange,
-                    help: "Weekly auto-kick tried this fresh reset but failed: \(failure)"
+                    help: "Weekly auto-kick tried this fresh reset but failed: \(weeklyAutoKickFailureHelp(failure))"
                 )
             }
 
@@ -1122,6 +1123,16 @@ final class AccountsViewModel {
         )
     }
 
+    private func weeklyAutoKickFailureHelp(_ failure: String) -> String {
+        let lower = failure.lowercased()
+        if lower.contains("api.responses.write")
+            || (lower.contains("missing scopes") && lower.contains("responses"))
+        {
+            return "Direct API activation is not allowed for this login token. Install or update the Codex CLI, then re-authenticate this account so auto-kick can use the CLI path."
+        }
+        return failure
+    }
+
     func evaluateWeeklyAutoKickCandidates(now: Date = Date()) async {
         guard !isEvaluatingWeeklyAutoKick else { return }
         guard !accounts.isEmpty else { return }
@@ -1154,7 +1165,7 @@ final class AccountsViewModel {
             return
         }
 
-        if shouldActivateFreshWeeklyReset(account: account, usage: usage, now: now) {
+        if shouldAttemptFreshWeeklyResetActivation(account: account, usage: usage, now: now) {
             let cycleID = usage.weeklyCycleIdentifier
             if shouldPauseWeeklyAutoKick(account: account, cycleID: cycleID, now: now) {
                 scheduleRetryWeeklyAutoKickCheck(for: accountID, account: account, now: now)
@@ -1215,6 +1226,28 @@ final class AccountsViewModel {
         }
 
         return false
+    }
+
+    private func shouldAttemptFreshWeeklyResetActivation(
+        account: CodexAccount,
+        usage: AccountUsage,
+        now: Date
+    ) -> Bool {
+        guard isWeeklyAutoKickEnabled(for: account) else { return false }
+        guard account.authState != .needsReauth, account.authState != .degraded else { return false }
+        guard isFreshWeeklyResetWindow(usage: usage, now: now),
+              let cycleID = usage.weeklyCycleIdentifier
+        else {
+            return false
+        }
+
+        if account.lastWeeklyAutoKickCycleID != cycleID {
+            return true
+        }
+
+        return account.lastWeeklyAutoKickSuccessAt == nil
+            && account.lastWeeklyAutoKickFailure != nil
+            && account.weeklyAutoKickAttemptCount < weeklyAutoKickMaxAttempts
     }
 
     private func shouldActivateFreshWeeklyReset(
@@ -1397,7 +1430,7 @@ final class AccountsViewModel {
         let secondsUntilReset = weeklyResetAt.timeIntervalSince(now)
         let nextCheckAt: Date
 
-        if shouldActivateFreshWeeklyReset(account: account, usage: usage, now: now) {
+        if shouldAttemptFreshWeeklyResetActivation(account: account, usage: usage, now: now) {
             nextCheckAt = now
         } else if secondsUntilReset <= -weeklyAutoKickDelay {
             nextCheckAt = now.addingTimeInterval(weeklyAutoKickInterval)
@@ -1495,6 +1528,7 @@ final class AccountsViewModel {
             refreshToken: account.refreshToken,
             idToken: account.idToken,
             accountId: account.accountId,
+            codexAuthJSON: account.codexAuthJSON ?? existing.codexAuthJSON,
             lastTokenRefresh: account.lastTokenRefresh,
             lastSuccessfulUsageAt: account.lastSuccessfulUsageAt,
             lastSuccessfulTokenRefreshAt: account.lastSuccessfulTokenRefreshAt,

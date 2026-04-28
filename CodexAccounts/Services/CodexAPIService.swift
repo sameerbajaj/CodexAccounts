@@ -432,6 +432,7 @@ enum CodexAPIService {
             refreshToken: refreshToken,
             idToken: tokens.idToken,
             accountId: tokens.accountId ?? claims.accountId,
+            codexAuthJSON: String(data: data, encoding: .utf8),
             lastTokenRefresh: lastRefresh,
             lastSuccessfulTokenRefreshAt: lastRefresh,
             authState: .healthy
