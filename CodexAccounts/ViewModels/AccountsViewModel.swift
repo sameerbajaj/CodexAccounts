@@ -916,6 +916,12 @@ final class AccountsViewModel {
         let current = currentAccount(id: account.id) ?? account
         let now = Date()
 
+        if let usage,
+           let freshResetStatus = freshWeeklyResetIndicator(for: current, usage: usage, now: now)
+        {
+            return freshResetStatus
+        }
+
         if !isWeeklyAutoKickEnabled(for: current) {
             if let failure = current.lastWeeklyAutoKickFailure,
                current.weeklyAutoKickAttemptCount >= weeklyAutoKickMaxAttempts
@@ -980,14 +986,6 @@ final class AccountsViewModel {
             }
 
             if let weeklyResetAt = usage.weeklyResetAt {
-                if shouldActivateFreshWeeklyReset(account: current, usage: usage, now: now) {
-                    return WeeklyAutoKickIndicator(
-                        symbol: "bolt.circle.fill",
-                        color: .cyan,
-                        help: "Fresh weekly reset detected. Activation pending."
-                    )
-                }
-
                 let secondsUntilReset = weeklyResetAt.timeIntervalSince(now)
                 if secondsUntilReset <= weeklyAutoKickSoonThreshold {
                     return WeeklyAutoKickIndicator(
@@ -1008,7 +1006,7 @@ final class AccountsViewModel {
 
         if let successAt = current.lastWeeklyAutoKickSuccessAt,
            let usage,
-           usage.weeklyResetAt == current.lastObservedWeeklyResetAt
+           usage.weeklyCycleIdentifier == current.lastWeeklyAutoKickCycleID
         {
             return WeeklyAutoKickIndicator(
                 symbol: "bolt.badge.checkmark",
@@ -1046,6 +1044,82 @@ final class AccountsViewModel {
                 )
             }
         }
+    }
+
+    private func freshWeeklyResetIndicator(
+        for account: CodexAccount,
+        usage: AccountUsage,
+        now: Date
+    ) -> WeeklyAutoKickIndicator? {
+        guard isFreshWeeklyResetWindow(usage: usage, now: now),
+              let cycleID = usage.weeklyCycleIdentifier
+        else {
+            return nil
+        }
+
+        if !isWeeklyAutoKickEnabled(for: account) {
+            return WeeklyAutoKickIndicator(
+                symbol: "bolt.slash",
+                color: .secondary.opacity(0.8),
+                help: "Fresh weekly reset detected, but weekly auto-kick is off for this account."
+            )
+        }
+
+        if account.authState == .needsReauth {
+            return WeeklyAutoKickIndicator(
+                symbol: "bolt.slash.fill",
+                color: .red,
+                help: "Fresh weekly reset detected, but weekly auto-kick needs re-authentication first."
+            )
+        }
+
+        if account.authState == .degraded {
+            return WeeklyAutoKickIndicator(
+                symbol: "bolt.slash.fill",
+                color: .orange,
+                help: "Fresh weekly reset detected, but weekly auto-kick is paused while refresh is failing."
+            )
+        }
+
+        if account.lastWeeklyAutoKickCycleID == cycleID {
+            if let failure = account.lastWeeklyAutoKickFailure {
+                return WeeklyAutoKickIndicator(
+                    symbol: "bolt.trianglebadge.exclamationmark.fill",
+                    color: .orange,
+                    help: "Weekly auto-kick tried this fresh reset but failed: \(failure)"
+                )
+            }
+
+            if account.weeklyAutoKickAttemptCount > 0 {
+                let retryDate = account.lastWeeklyAutoKickAttemptAt?.addingTimeInterval(weeklyAutoKickRetryDelay)
+                let retrySuffix = retryDate.map { ", retry \($0.resetDescription)" } ?? ""
+                return WeeklyAutoKickIndicator(
+                    symbol: "bolt.circle.fill",
+                    color: .cyan,
+                    help: "Weekly auto-kick is activating this fresh reset, attempt \(account.weeklyAutoKickAttemptCount)/\(weeklyAutoKickMaxAttempts)\(retrySuffix)."
+                )
+            }
+
+            if let successAt = account.lastWeeklyAutoKickSuccessAt {
+                return WeeklyAutoKickIndicator(
+                    symbol: "bolt.badge.checkmark",
+                    color: .green,
+                    help: "Weekly auto-kick sent the activation message for this reset \(successAt.relativeDescription). If usage still shows 100%, the message was accepted but Codex has not reported token usage yet."
+                )
+            }
+
+            return WeeklyAutoKickIndicator(
+                symbol: "bolt.circle",
+                color: .green.opacity(0.95),
+                help: "Weekly auto-kick already handled this fresh reset cycle."
+            )
+        }
+
+        return WeeklyAutoKickIndicator(
+            symbol: "bolt.circle.fill",
+            color: .cyan,
+            help: "Fresh weekly reset detected. Activation pending."
+        )
     }
 
     func evaluateWeeklyAutoKickCandidates(now: Date = Date()) async {
@@ -1157,6 +1231,21 @@ final class AccountsViewModel {
         }
         guard weeklyResetAt > now else { return false }
         guard account.lastWeeklyAutoKickCycleID != cycleID else { return false }
+
+        if let weeklyRemaining = usage.weeklyRemainingPercent {
+            return weeklyRemaining >= 99.5
+        }
+
+        return usage.isWeeklyPrimary && usage.remainingPercent >= 99.5
+    }
+
+    private func isFreshWeeklyResetWindow(usage: AccountUsage, now: Date) -> Bool {
+        guard let weeklyResetAt = usage.weeklyResetAt,
+              usage.weeklyCycleIdentifier != nil,
+              weeklyResetAt > now
+        else {
+            return false
+        }
 
         if let weeklyRemaining = usage.weeklyRemainingPercent {
             return weeklyRemaining >= 99.5
