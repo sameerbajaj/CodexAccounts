@@ -159,7 +159,11 @@ enum CodexAPIService {
     static func markUsageSuccess(for account: CodexAccount, now: Date = Date()) -> CodexAccount {
         var updated = account
         updated.lastSuccessfulUsageAt = now
-        updated.authState = .healthy
+        if updated.authState == .stale ||
+            (updated.authState == .degraded && updated.lastRefreshFailureAt == nil)
+        {
+            updated.authState = .healthy
+        }
         return updated
     }
 

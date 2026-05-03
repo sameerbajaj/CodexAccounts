@@ -384,13 +384,7 @@ final class AccountsViewModel {
             )
             accountForUsage = mergeAccount(audit.account)
         } catch let error as CodexAPIService.APIError {
-            let failedError: CodexAPIService.APIError = if error == .unauthorized {
-                .networkError("Refresh token rejected")
-            } else {
-                error
-            }
-
-            let failed = CodexAPIService.markRefreshFailure(for: accountForUsage, error: failedError)
+            let failed = CodexAPIService.markRefreshFailure(for: accountForUsage, error: error)
             accountForUsage = mergeAccount(failed)
         } catch {
             let failed = CodexAPIService.markRefreshFailure(
@@ -464,12 +458,7 @@ final class AccountsViewModel {
                 let merged = mergeAccount(result.account)
                 accountStatuses[account.id] = status(for: merged)
             } catch let error as CodexAPIService.APIError {
-                let failedError: CodexAPIService.APIError = if error == .unauthorized {
-                    .networkError("Refresh token rejected")
-                } else {
-                    error
-                }
-                let failed = CodexAPIService.markRefreshFailure(for: current, error: failedError)
+                let failed = CodexAPIService.markRefreshFailure(for: current, error: error)
                 let merged = mergeAccount(failed)
                 accountStatuses[account.id] = status(for: merged)
             } catch {
@@ -570,6 +559,7 @@ final class AccountsViewModel {
             guard let self else { return }
             Task { @MainActor in
                 if self.refreshInterval == .twoMin, let top = self.sortedAccounts.first {
+                    await self.auditAllSessions(trigger: .timer)
                     await self.refreshAccount(top, trigger: .timer)
                 } else {
                     await self.refreshAll(trigger: .timer)
