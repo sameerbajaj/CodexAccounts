@@ -361,7 +361,7 @@ enum CodexAPIService {
                 at: authURL.deletingLastPathComponent(),
                 withIntermediateDirectories: true
             )
-            let authJSON = account.codexAuthJSON ?? makeAuthJSON(for: account)
+            let authJSON = makeAuthJSON(for: account)
             try authJSON.write(to: authURL, atomically: true, encoding: .utf8)
             try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: authURL.path)
         } catch {
