@@ -55,6 +55,42 @@ struct CodexAccountsTests {
         #expect(updated.authState == .stale)
     }
 
+    @Test func auditRefreshesStaleAccountsEvenBeforeMaxTokenAge() async throws {
+        let baseline = Date(timeIntervalSince1970: 500)
+        let stale = makeAccount(
+            lastSuccessfulTokenRefreshAt: baseline,
+            authState: .stale
+        )
+
+        let shouldRefresh = CodexAPIService.shouldRefreshDuringAudit(
+            stale,
+            refreshBaseline: baseline,
+            maxTokenAge: 7 * 24 * 60 * 60,
+            accessTokenExpiresSoon: false,
+            now: baseline.addingTimeInterval(60)
+        )
+
+        #expect(shouldRefresh)
+    }
+
+    @Test func auditDoesNotRefreshHealthyRecentAccountsWithoutExpiringAccessToken() async throws {
+        let baseline = Date(timeIntervalSince1970: 600)
+        let healthy = makeAccount(
+            lastSuccessfulTokenRefreshAt: baseline,
+            authState: .healthy
+        )
+
+        let shouldRefresh = CodexAPIService.shouldRefreshDuringAudit(
+            healthy,
+            refreshBaseline: baseline,
+            maxTokenAge: 7 * 24 * 60 * 60,
+            accessTokenExpiresSoon: false,
+            now: baseline.addingTimeInterval(60)
+        )
+
+        #expect(!shouldRefresh)
+    }
+
     @Test func markUsageSuccessRestoresHealthyState() async throws {
         let account = makeAccount(
             lastRefreshFailureAt: Date(timeIntervalSince1970: 400),

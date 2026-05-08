@@ -129,8 +129,13 @@ enum CodexAPIService {
             refreshBefore: refreshBeforeExpiry,
             now: now
         )
-        let shouldRefresh = accessTokenExpiresSoon
-            || now.timeIntervalSince(refreshBaseline) >= maxTokenAge
+        let shouldRefresh = shouldRefreshDuringAudit(
+            candidate,
+            refreshBaseline: refreshBaseline,
+            maxTokenAge: maxTokenAge,
+            accessTokenExpiresSoon: accessTokenExpiresSoon,
+            now: now
+        )
 
         guard shouldRefresh else {
             if candidate.authState == .degraded,
@@ -147,6 +152,18 @@ enum CodexAPIService {
         return AuditResult(account: refreshed, didRefresh: true)
     }
 
+    static func shouldRefreshDuringAudit(
+        _ account: CodexAccount,
+        refreshBaseline: Date,
+        maxTokenAge: TimeInterval,
+        accessTokenExpiresSoon: Bool,
+        now: Date
+    ) -> Bool {
+        account.authState == .stale
+            || accessTokenExpiresSoon
+            || now.timeIntervalSince(refreshBaseline) >= maxTokenAge
+    }
+
     private static func accessTokenExpiresSoon(
         _ token: String,
         refreshBefore: TimeInterval,
@@ -159,10 +176,10 @@ enum CodexAPIService {
     static func markUsageSuccess(for account: CodexAccount, now: Date = Date()) -> CodexAccount {
         var updated = account
         updated.lastSuccessfulUsageAt = now
-        if updated.authState == .stale ||
-            (updated.authState == .degraded && updated.lastRefreshFailureAt == nil)
-        {
+        if updated.authState == .stale || updated.authState == .degraded {
             updated.authState = .healthy
+            updated.lastRefreshFailureAt = nil
+            updated.consecutiveRefreshFailures = 0
         }
         return updated
     }
@@ -313,11 +330,17 @@ enum CodexAPIService {
         if let newID = tokenResponse.idToken, !newID.isEmpty {
             updated.idToken = newID
         }
-        if let claims = JWTParser.parse(updated.idToken ?? updated.accessToken),
-           let refreshedAccountID = claims.accountId,
-           !refreshedAccountID.isEmpty
-        {
-            updated.accountId = refreshedAccountID
+        if let claims = JWTParser.parse(updated.idToken ?? updated.accessToken) {
+            if let refreshedEmail = claims.email,
+               refreshedEmail.caseInsensitiveCompare(account.email) != .orderedSame
+            {
+                throw APIError.unauthorized
+            }
+            if let refreshedAccountID = claims.accountId,
+               !refreshedAccountID.isEmpty
+            {
+                updated.accountId = refreshedAccountID
+            }
         }
         updated.lastTokenRefresh = now
         updated.lastSuccessfulTokenRefreshAt = now
