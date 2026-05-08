@@ -8,7 +8,7 @@
 import Foundation
 
 enum AccountStore {
-    private static var storeDirectory: URL {
+    static var storeDirectory: URL {
         let appSupport = FileManager.default.urls(
             for: .applicationSupportDirectory,
             in: .userDomainMask
@@ -16,8 +16,21 @@ enum AccountStore {
         return appSupport.appendingPathComponent("CodexAccounts")
     }
 
+    static var codexHomesDirectory: URL {
+        storeDirectory.appendingPathComponent("CodexHomes")
+    }
+
     private static var storeURL: URL {
         storeDirectory.appendingPathComponent("accounts.json")
+    }
+
+    static func codexHomeURL(for account: CodexAccount) -> URL {
+        let stableID = account.accountId?.isEmpty == false ? account.accountId! : account.id
+        let safeID = stableID
+            .replacingOccurrences(of: "/", with: "_")
+            .replacingOccurrences(of: ":", with: "_")
+            .replacingOccurrences(of: " ", with: "_")
+        return codexHomesDirectory.appendingPathComponent(safeID, isDirectory: true)
     }
 
     static func load() -> [CodexAccount] {

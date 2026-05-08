@@ -318,13 +318,14 @@ final class AccountsViewModel {
         guard !hasSetup else { return }
         hasSetup = true
 
-        accounts = AccountStore.load().map(normalizedAccountOnLoad)
+        accounts = deduplicatedAccounts(AccountStore.load().map(normalizedAccountOnLoad))
         normalizePinnedOrder()
         applyAccountStates()
+        persistAccounts()
         syncCurrentAuthFile()
 
         if accounts.isEmpty, let account = CodexAPIService.readAuthFile() {
-            accounts.append(account)
+            accounts.append(normalizedAccountOnLoad(account))
             persistAccounts()
             detectedUntrackedEmail = nil
         }
@@ -594,12 +595,14 @@ final class AccountsViewModel {
         guard let authAccount = CodexAPIService.readAuthFile() else { return }
         let existingIds = Set(accounts.map(\.id))
 
-        if !existingIds.contains(authAccount.id) {
+        let canonicalAuthAccount = normalizedAccountOnLoad(authAccount)
+
+        if !existingIds.contains(canonicalAuthAccount.id) {
             detectedUntrackedEmail = authAccount.email
             return
         }
 
-        let merged = mergeAuthSnapshot(authAccount)
+        let merged = mergeAuthSnapshot(canonicalAuthAccount)
         detectedUntrackedEmail = nil
 
         if trigger == .authFileSync {
@@ -683,12 +686,13 @@ final class AccountsViewModel {
 
     func addDetectedAccount() {
         guard let account = CodexAPIService.readAuthFile() else { return }
-        if !accounts.contains(where: { $0.id == account.id }) {
-            accounts.append(account)
+        let canonicalAccount = normalizedAccountOnLoad(account)
+        if !accounts.contains(where: { $0.id == canonicalAccount.id }) {
+            accounts.append(canonicalAccount)
             persistAccounts()
-            Task { await refreshAccount(account, trigger: .authFileSync) }
+            Task { await refreshAccount(canonicalAccount, trigger: .authFileSync) }
         } else {
-            _ = mergeAuthSnapshot(account)
+            _ = mergeAuthSnapshot(canonicalAccount)
         }
         detectedUntrackedEmail = nil
     }
@@ -752,10 +756,11 @@ final class AccountsViewModel {
     private func handleAddAccountAuthFileChange() {
         Task {
             try? await Task.sleep(for: .milliseconds(500))
-            guard let account = CodexAPIService.readAuthFile(codexHome: importCodexHome) else {
+            guard let importedAccount = CodexAPIService.readAuthFile(codexHome: importCodexHome) else {
                 addAccountStatus = .error("Could not read auth file. Try again.")
                 return
             }
+            let account = normalizedAccountOnLoad(importedAccount)
 
             if let pendingReauthAccountID,
                pendingReauthAccountID != account.id,
@@ -1382,6 +1387,44 @@ final class AccountsViewModel {
 
     private func normalizedAccountOnLoad(_ account: CodexAccount) -> CodexAccount {
         var normalized = account
+        if let claims = JWTParser.parse(normalized.idToken ?? normalized.accessToken),
+           let tokenEmail = claims.email,
+           tokenEmail.caseInsensitiveCompare(normalized.email) != .orderedSame
+        {
+            normalized = CodexAccount(
+                email: tokenEmail,
+                planType: claims.planType ?? normalized.planType,
+                accessToken: normalized.accessToken,
+                refreshToken: normalized.refreshToken,
+                idToken: normalized.idToken,
+                accountId: claims.accountId ?? normalized.accountId,
+                codexHomePath: normalized.codexHomePath,
+                codexAuthJSON: normalized.codexAuthJSON,
+                lastTokenRefresh: normalized.lastTokenRefresh,
+                lastSuccessfulUsageAt: normalized.lastSuccessfulUsageAt,
+                lastSuccessfulTokenRefreshAt: normalized.lastSuccessfulTokenRefreshAt,
+                lastRefreshAttemptAt: normalized.lastRefreshAttemptAt,
+                lastRefreshFailureAt: normalized.lastRefreshFailureAt,
+                consecutiveRefreshFailures: normalized.consecutiveRefreshFailures,
+                authState: normalized.authState,
+                addedAt: normalized.addedAt,
+                isPinned: normalized.isPinned,
+                pinnedOrder: normalized.pinnedOrder,
+                weeklyAutoKickOverride: normalized.weeklyAutoKickOverride,
+                lastObservedWeeklyResetAt: normalized.lastObservedWeeklyResetAt,
+                lastWeeklyAutoKickCycleID: normalized.lastWeeklyAutoKickCycleID,
+                lastWeeklyAutoKickAttemptAt: normalized.lastWeeklyAutoKickAttemptAt,
+                lastWeeklyAutoKickSuccessAt: normalized.lastWeeklyAutoKickSuccessAt,
+                lastWeeklyAutoKickFailure: normalized.lastWeeklyAutoKickFailure,
+                weeklyAutoKickAttemptCount: normalized.weeklyAutoKickAttemptCount
+            )
+        }
+        let codexHomeURL = AccountStore.codexHomeURL(for: normalized)
+        normalized.codexHomePath = codexHomeURL.path
+        if normalized.codexAuthJSON == nil {
+            normalized.codexAuthJSON = CodexAPIService.makeAuthJSON(for: normalized)
+        }
+        CodexAPIService.persistAuthFile(for: normalized)
         if normalized.lastSuccessfulTokenRefreshAt == nil {
             normalized.lastSuccessfulTokenRefreshAt = normalized.lastTokenRefresh
         }
@@ -1393,6 +1436,32 @@ final class AccountsViewModel {
             staleAfter: staleSessionThreshold
         )
         return normalized
+    }
+
+    private func deduplicatedAccounts(_ loadedAccounts: [CodexAccount]) -> [CodexAccount] {
+        var byID: [String: CodexAccount] = [:]
+        for account in loadedAccounts {
+            guard let existing = byID[account.id] else {
+                byID[account.id] = account
+                continue
+            }
+            byID[account.id] = preferredAccount(existing, account)
+        }
+        return loadedAccounts.compactMap { account in
+            guard byID[account.id]?.addedAt == account.addedAt else { return nil }
+            defer { byID.removeValue(forKey: account.id) }
+            return byID[account.id]
+        }
+    }
+
+    private func preferredAccount(_ lhs: CodexAccount, _ rhs: CodexAccount) -> CodexAccount {
+        if lhs.authState != rhs.authState {
+            if lhs.authState == .healthy { return lhs }
+            if rhs.authState == .healthy { return rhs }
+        }
+        let lhsDate = lhs.lastAuthValidationAt ?? lhs.addedAt
+        let rhsDate = rhs.lastAuthValidationAt ?? rhs.addedAt
+        return lhsDate >= rhsDate ? lhs : rhs
     }
 
     private func syncWeeklyObservation(for accountID: String, usage: AccountUsage) {
@@ -1560,6 +1629,7 @@ final class AccountsViewModel {
             refreshToken: account.refreshToken,
             idToken: account.idToken,
             accountId: account.accountId,
+            codexHomePath: account.codexHomePath ?? existing.codexHomePath,
             codexAuthJSON: account.codexAuthJSON ?? existing.codexAuthJSON,
             lastTokenRefresh: account.lastTokenRefresh,
             lastSuccessfulUsageAt: account.lastSuccessfulUsageAt,

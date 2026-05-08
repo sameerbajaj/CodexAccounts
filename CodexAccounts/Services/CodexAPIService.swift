@@ -347,7 +347,54 @@ enum CodexAPIService {
         updated.lastRefreshFailureAt = nil
         updated.consecutiveRefreshFailures = 0
         updated.authState = .healthy
+        updated.codexAuthJSON = makeAuthJSON(for: updated, lastRefresh: now)
+        persistAuthFile(for: updated)
         return updated
+    }
+
+    static func persistAuthFile(for account: CodexAccount) {
+        guard let codexHomePath = account.codexHomePath, !codexHomePath.isEmpty else { return }
+
+        let authURL = URL(fileURLWithPath: codexHomePath).appendingPathComponent("auth.json")
+        do {
+            try FileManager.default.createDirectory(
+                at: authURL.deletingLastPathComponent(),
+                withIntermediateDirectories: true
+            )
+            let authJSON = account.codexAuthJSON ?? makeAuthJSON(for: account)
+            try authJSON.write(to: authURL, atomically: true, encoding: .utf8)
+            try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: authURL.path)
+        } catch {
+            print("CodexAPIService: Failed to persist auth file: \(error)")
+        }
+    }
+
+    static func makeAuthJSON(for account: CodexAccount, lastRefresh: Date? = nil) -> String {
+        var tokens: [String: Any] = [
+            "access_token": account.accessToken,
+            "refresh_token": account.refreshToken,
+        ]
+        if let idToken = account.idToken, !idToken.isEmpty {
+            tokens["id_token"] = idToken
+        }
+        if let accountId = account.accountId, !accountId.isEmpty {
+            tokens["account_id"] = accountId
+        }
+
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        let auth: [String: Any] = [
+            "auth_mode": "chatgpt",
+            "tokens": tokens,
+            "last_refresh": formatter.string(from: lastRefresh ?? account.lastTokenRefresh ?? Date()),
+        ]
+
+        guard let data = try? JSONSerialization.data(withJSONObject: auth, options: [.prettyPrinted, .sortedKeys]),
+              let text = String(data: data, encoding: .utf8)
+        else {
+            return "{\"auth_mode\":\"chatgpt\",\"tokens\":{}}\n"
+        }
+        return text + "\n"
     }
 
     private static func responseErrorText(from data: Data) -> String? {
@@ -459,6 +506,7 @@ enum CodexAPIService {
             refreshToken: refreshToken,
             idToken: tokens.idToken,
             accountId: tokens.accountId ?? claims.accountId,
+            codexHomePath: codexHome,
             codexAuthJSON: String(data: data, encoding: .utf8),
             lastTokenRefresh: lastRefresh,
             lastSuccessfulTokenRefreshAt: lastRefresh,

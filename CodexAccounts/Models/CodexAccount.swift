@@ -71,6 +71,7 @@ struct CodexAccount: Identifiable, Codable, Hashable {
     var refreshToken: String
     var idToken: String?
     var accountId: String?
+    var codexHomePath: String?
     var codexAuthJSON: String?
     var lastTokenRefresh: Date?
     var lastSuccessfulUsageAt: Date?
@@ -92,7 +93,7 @@ struct CodexAccount: Identifiable, Codable, Hashable {
 
     enum CodingKeys: String, CodingKey {
         case id, email, planType, accessToken, refreshToken
-        case idToken, accountId, codexAuthJSON, lastTokenRefresh
+        case idToken, accountId, codexHomePath, codexAuthJSON, lastTokenRefresh
         case lastSuccessfulUsageAt, lastSuccessfulTokenRefreshAt
         case lastRefreshAttemptAt, lastRefreshFailureAt
         case consecutiveRefreshFailures, authState
@@ -110,6 +111,7 @@ struct CodexAccount: Identifiable, Codable, Hashable {
         refreshToken: String,
         idToken: String? = nil,
         accountId: String? = nil,
+        codexHomePath: String? = nil,
         codexAuthJSON: String? = nil,
         lastTokenRefresh: Date? = nil,
         lastSuccessfulUsageAt: Date? = nil,
@@ -136,6 +138,7 @@ struct CodexAccount: Identifiable, Codable, Hashable {
         self.refreshToken = refreshToken
         self.idToken = idToken
         self.accountId = accountId
+        self.codexHomePath = codexHomePath
         self.codexAuthJSON = codexAuthJSON
         self.lastTokenRefresh = lastTokenRefresh
         self.lastSuccessfulUsageAt = lastSuccessfulUsageAt
@@ -165,6 +168,7 @@ struct CodexAccount: Identifiable, Codable, Hashable {
         refreshToken = try c.decode(String.self, forKey: .refreshToken)
         idToken = try c.decodeIfPresent(String.self, forKey: .idToken)
         accountId = try c.decodeIfPresent(String.self, forKey: .accountId)
+        codexHomePath = try c.decodeIfPresent(String.self, forKey: .codexHomePath)
         codexAuthJSON = try c.decodeIfPresent(String.self, forKey: .codexAuthJSON)
         lastTokenRefresh = try c.decodeIfPresent(Date.self, forKey: .lastTokenRefresh)
         lastSuccessfulUsageAt = try c.decodeIfPresent(Date.self, forKey: .lastSuccessfulUsageAt)

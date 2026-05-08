@@ -8,7 +8,7 @@ The Codex CLI has two rate limits: a rolling 5-hour window and a weekly window. 
 
 Codex Accounts shows the lowest remaining percentage across all your accounts directly in the menu bar. Click the icon to open a popover with a card for each account. Each card has both usage meters with time-to-reset countdowns, credit balance if your plan has one, and the plan type.
 
-The app watches `~/.codex/auth.json`. When you run `codex auth` to switch accounts, it picks up the new account automatically. Tokens are refreshed proactively in the background and again on-demand if a request returns unauthorized.
+The app imports Codex CLI logins, then keeps each account in its own isolated Codex home under `~/Library/Application Support/CodexAccounts/CodexHomes/`. Tokens are refreshed proactively in the background and again on-demand if a request returns unauthorized.
 
 ## Requirements
 
@@ -89,20 +89,19 @@ Output is written to `dist/`.
 
 ## Adding accounts
 
-The app detects your current account from `~/.codex/auth.json` on launch. To add another, click "Add Account" in the popover, then in a terminal run:
+The app detects your current account from `~/.codex/auth.json` on launch. To add another, click "Add Account" in the popover, then sign in through the isolated Codex login window.
 
 ```
-codex logout
-codex auth
+CODEX_HOME="$HOME/.codex-accounts-import" codex login
 ```
 
-The app watches the auth file and adds the new account automatically.
+The app watches the import auth file, adds the account automatically, then copies it into that account's dedicated Codex home.
 
 ## Privacy
 
 The only network requests are to `chatgpt.com/backend-api/wham/usage` to fetch usage numbers and `auth.openai.com/oauth/token` to refresh tokens when they expire. No analytics, no telemetry.
 
-Account data (including tokens) is stored locally in `~/Library/Application Support/CodexAccounts/accounts.json`. Nothing else leaves your machine.
+Account data (including tokens) is stored locally in `~/Library/Application Support/CodexAccounts/accounts.json` and each account's isolated `auth.json` under `~/Library/Application Support/CodexAccounts/CodexHomes/`. Nothing else leaves your machine.
 
 ## License
 

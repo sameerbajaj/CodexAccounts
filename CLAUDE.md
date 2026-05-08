@@ -40,14 +40,15 @@ Always report build status explicitly (`BUILD SUCCEEDED` or failure reason) in h
 
 ### Key Data Flow
 
-**Startup:** `viewModel.setup()` → `AccountStore.load()` → start auto-refresh timer + token keep-alive (every 10 min)
+**Startup:** `viewModel.setup()` → `AccountStore.load()` → normalize each account into its isolated Codex home → start auto-refresh timer + token keep-alive
 
 **Refresh cycle:** `refreshAccount()` → `CodexAPIService.fetchUsageWithRefresh()` → on 401, auto-calls `refreshToken()` → updates `usageData`/`accountStatuses` → persists tokens
 
-**Add account:** `startAddingAccount()` starts `AuthFileWatcher` polling `~/.codex/auth.json` every 2s → detects modification after `codex auth` → parses JWT claims via `JWTParser` → saves to `AccountStore`
+**Add account:** `startAddingAccount()` starts `AuthFileWatcher` polling isolated import home `~/.codex-accounts-import/auth.json` every 2s → detects modification after `codex login` → parses JWT claims via `JWTParser` → saves to `AccountStore` → writes canonical auth to `~/Library/Application Support/CodexAccounts/CodexHomes/<account>/auth.json`
 
 ### Persistence
 - Accounts: `~/Library/Application Support/CodexAccounts/accounts.json` (atomic writes)
+- Per-account Codex homes: `~/Library/Application Support/CodexAccounts/CodexHomes/<account>/auth.json` (canonical auth file per tracked account)
 - Preferences (sort mode, display mode, refresh interval): `UserDefaults` as **stored** `var` properties with `didSet` — never computed getters (breaks `@Observable` reactivity)
 - Watched file: `~/.codex/auth.json` (read-only)
 
