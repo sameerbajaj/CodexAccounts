@@ -149,6 +149,47 @@ struct CodexAccountsTests {
         #expect(decoded.lastWeeklyAutoKickCycleID == nil)
     }
 
+    @Test func readAuthFileFallsBackToIDTokenForEmailClaims() async throws {
+        let codexHome = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: codexHome, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: codexHome) }
+
+        let accessToken = makeJWT(payload: [
+            "https://api.openai.com/auth": [
+                "chatgpt_account_id": "acct_access",
+                "chatgpt_plan_type": "plus",
+            ],
+        ])
+        let idToken = makeJWT(payload: [
+            "email": "real-user@example.com",
+        ])
+        let authJSON = """
+        {
+          "auth_mode": "chatgpt",
+          "tokens": {
+            "access_token": "\(accessToken)",
+            "refresh_token": "refresh",
+            "id_token": "\(idToken)",
+            "account_id": "acct_file"
+          },
+          "last_refresh": "1970-01-01T00:00:00Z"
+        }
+        """
+
+        try authJSON.write(
+            to: codexHome.appendingPathComponent("auth.json"),
+            atomically: true,
+            encoding: .utf8
+        )
+
+        let account = CodexAPIService.readAuthFile(codexHome: codexHome.path)
+
+        #expect(account?.email == "real-user@example.com")
+        #expect(account?.planType == "plus")
+        #expect(account?.accountId == "acct_access")
+    }
+
     @Test func weeklyAutoKickPolicyResolvesGlobalAndPerAccountOverrides() async throws {
         let viewModel = AccountsViewModel()
         let pinned = makeAccount(isPinned: true)
@@ -341,6 +382,23 @@ struct CodexAccountsTests {
             error: nil,
             lastActivityAt: nil
         )
+    }
+
+    private func makeJWT(payload: [String: Any]) -> String {
+        func encode(_ object: Any) -> String {
+            let data = try! JSONSerialization.data(withJSONObject: object, options: [.sortedKeys])
+            return data
+                .base64EncodedString()
+                .replacingOccurrences(of: "+", with: "-")
+                .replacingOccurrences(of: "/", with: "_")
+                .replacingOccurrences(of: "=", with: "")
+        }
+
+        return [
+            encode(["alg": "none", "typ": "JWT"]),
+            encode(payload),
+            "signature",
+        ].joined(separator: ".")
     }
 
 }

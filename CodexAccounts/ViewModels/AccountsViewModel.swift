@@ -602,6 +602,13 @@ final class AccountsViewModel {
             return
         }
 
+        if let existing = accounts.first(where: { $0.id == canonicalAuthAccount.id }),
+           accountIDsConflict(existing.accountId, canonicalAuthAccount.accountId)
+        {
+            detectedUntrackedEmail = authAccount.email
+            return
+        }
+
         let merged = mergeAuthSnapshot(canonicalAuthAccount)
         detectedUntrackedEmail = nil
 
@@ -620,6 +627,9 @@ final class AccountsViewModel {
         }
 
         var existing = accounts[idx]
+        guard !accountIDsConflict(existing.accountId, authAccount.accountId) else {
+            return existing
+        }
         let snapshotIsNewer = shouldApplyAuthSnapshot(authAccount, over: existing)
 
         if authAccount.planType.lowercased() != "unknown" {
@@ -656,6 +666,10 @@ final class AccountsViewModel {
     }
 
     private func shouldApplyAuthSnapshot(_ snapshot: CodexAccount, over existing: CodexAccount) -> Bool {
+        if accountIDsConflict(existing.accountId, snapshot.accountId) {
+            return false
+        }
+
         if existing.accessToken.isEmpty || existing.refreshToken.isEmpty {
             return true
         }
@@ -1387,17 +1401,22 @@ final class AccountsViewModel {
 
     private func normalizedAccountOnLoad(_ account: CodexAccount) -> CodexAccount {
         var normalized = account
-        if let claims = JWTParser.parse(normalized.idToken ?? normalized.accessToken),
+        let accessClaims = JWTParser.parse(normalized.accessToken)
+        let identityClaims = accessClaims?.email == nil
+            ? normalized.idToken.flatMap(JWTParser.parse)
+            : accessClaims
+
+        if let claims = identityClaims,
            let tokenEmail = claims.email,
            tokenEmail.caseInsensitiveCompare(normalized.email) != .orderedSame
         {
             normalized = CodexAccount(
                 email: tokenEmail,
-                planType: claims.planType ?? normalized.planType,
+                planType: accessClaims?.planType ?? claims.planType ?? normalized.planType,
                 accessToken: normalized.accessToken,
                 refreshToken: normalized.refreshToken,
                 idToken: normalized.idToken,
-                accountId: claims.accountId ?? normalized.accountId,
+                accountId: accessClaims?.accountId ?? claims.accountId ?? normalized.accountId,
                 codexHomePath: normalized.codexHomePath,
                 codexAuthJSON: normalized.codexAuthJSON,
                 lastTokenRefresh: normalized.lastTokenRefresh,
@@ -1608,6 +1627,9 @@ final class AccountsViewModel {
     @discardableResult
     private func mergeAccount(_ account: CodexAccount) -> CodexAccount {
         if let idx = accounts.firstIndex(where: { $0.id == account.id }) {
+            guard !accountIDsConflict(accounts[idx].accountId, account.accountId) else {
+                return accounts[idx]
+            }
             accounts[idx] = preservedAccountIdentity(from: account, existing: accounts[idx])
             accountStatuses[account.id] = status(for: accounts[idx])
             persistAccounts()
@@ -1721,6 +1743,11 @@ final class AccountsViewModel {
                 }
             }
         )
+    }
+
+    private func accountIDsConflict(_ lhs: String?, _ rhs: String?) -> Bool {
+        guard let lhs, let rhs, !lhs.isEmpty, !rhs.isEmpty else { return false }
+        return lhs != rhs
     }
 }
 

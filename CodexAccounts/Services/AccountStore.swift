@@ -37,7 +37,21 @@ enum AccountStore {
         guard let data = try? Data(contentsOf: storeURL) else { return [] }
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .iso8601
-        return (try? decoder.decode([CodexAccount].self, from: data)) ?? []
+        if let accounts = try? decoder.decode([CodexAccount].self, from: data) {
+            return accounts
+        }
+
+        guard let rawRows = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]] else {
+            return []
+        }
+
+        return rawRows.compactMap { row in
+            guard JSONSerialization.isValidJSONObject(row),
+                  let rowData = try? JSONSerialization.data(withJSONObject: row),
+                  let account = try? decoder.decode(CodexAccount.self, from: rowData)
+            else { return nil }
+            return account
+        }
     }
 
     static func save(_ accounts: [CodexAccount]) {

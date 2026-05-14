@@ -483,8 +483,12 @@ enum CodexAPIService {
               let refreshToken = tokens.refreshToken, !refreshToken.isEmpty
         else { return nil }
 
-        let tokenToParse = tokens.idToken ?? accessToken
-        guard let claims = JWTParser.parse(tokenToParse),
+        let accessClaims = JWTParser.parse(accessToken)
+        let identityClaims = accessClaims?.email == nil
+            ? tokens.idToken.flatMap(JWTParser.parse)
+            : accessClaims
+
+        guard let claims = identityClaims,
               let email = claims.email
         else { return nil }
 
@@ -501,11 +505,11 @@ enum CodexAPIService {
 
         return CodexAccount(
             email: email,
-            planType: claims.planType ?? "unknown",
+            planType: accessClaims?.planType ?? claims.planType ?? "unknown",
             accessToken: accessToken,
             refreshToken: refreshToken,
             idToken: tokens.idToken,
-            accountId: tokens.accountId ?? claims.accountId,
+            accountId: accessClaims?.accountId ?? claims.accountId ?? tokens.accountId,
             codexHomePath: codexHome,
             codexAuthJSON: String(data: data, encoding: .utf8),
             lastTokenRefresh: lastRefresh,
