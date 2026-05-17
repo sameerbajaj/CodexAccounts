@@ -60,10 +60,13 @@ enum UpdateChecker {
         if let latest = releases.first(where: { $0.tagName == "latest" }),
            let publishedAt = latest.publishedAt {
             let baseline = max(buildTimestamp, lastInstalledRollingTimestamp)
-            if baseline > 0 && publishedAt > baseline + 60 {
+            let releaseVersion = version(from: latest.name)
+            if releaseVersion.map({ isNewer($0, than: currentVersion) }) == true
+                || (baseline > 0 && publishedAt > baseline + 60)
+            {
                 // Remote is at least 1 min newer — a real push happened
                 return UpdateInfo(
-                    version: "latest",
+                    version: releaseVersion ?? "latest",
                     tagName: "latest",
                     releaseURL: URL(string: latest.htmlURL) ?? releasesPage,
                     downloadURL: preferredDMGURL(in: latest),
@@ -112,6 +115,16 @@ enum UpdateChecker {
         return s
     }
 
+    private static func version(from text: String?) -> String? {
+        guard let text else { return nil }
+        let pattern = #"\b(\d+)\.(\d+)\.(\d+)\b"#
+        guard let regex = try? NSRegularExpression(pattern: pattern),
+              let match = regex.firstMatch(in: text, range: NSRange(text.startIndex..., in: text)),
+              let range = Range(match.range, in: text)
+        else { return nil }
+        return String(text[range])
+    }
+
     private static func isNewer(_ a: String, than b: String) -> Bool {
         let av = a.split(separator: ".").compactMap { Int($0) }
         let bv = b.split(separator: ".").compactMap { Int($0) }
@@ -134,6 +147,7 @@ enum UpdateChecker {
 
 private struct GitHubRelease: Decodable {
     let tagName:     String
+    let name:        String?
     let htmlURL:     String
     let draft:       Bool
     let prerelease:  Bool
@@ -143,6 +157,7 @@ private struct GitHubRelease: Decodable {
 
     enum CodingKeys: String, CodingKey {
         case tagName    = "tag_name"
+        case name
         case htmlURL    = "html_url"
         case draft, prerelease, body
         case publishedAt = "published_at"
@@ -152,6 +167,7 @@ private struct GitHubRelease: Decodable {
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         tagName    = try c.decode(String.self, forKey: .tagName)
+        name       = try c.decodeIfPresent(String.self, forKey: .name)
         htmlURL    = try c.decode(String.self, forKey: .htmlURL)
         draft      = try c.decode(Bool.self,   forKey: .draft)
         prerelease = try c.decode(Bool.self,   forKey: .prerelease)

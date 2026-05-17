@@ -27,7 +27,7 @@ enum SelfUpdater {
     static func update(
         dmgURL: URL,
         onStateChange: @escaping @MainActor (SelfUpdateState) -> Void
-    ) async {
+    ) async -> Bool {
         do {
             // 1 — Download
             await MainActor.run { onStateChange(.downloading(progress: 0)) }
@@ -54,9 +54,11 @@ enum SelfUpdater {
 
             // 7 — Relaunch
             relaunchApp(at: runningAppURL)
+            return true
 
         } catch {
             await MainActor.run { onStateChange(.failed(error.localizedDescription)) }
+            return false
         }
     }
 

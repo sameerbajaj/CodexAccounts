@@ -533,15 +533,14 @@ final class AccountsViewModel {
     func installUpdate() {
         guard let update = availableUpdate, let dmgURL = update.downloadURL else { return }
 
-        if update.isRolling, let ts = update.publishedAt {
-            UpdateChecker.recordInstalledRollingTimestamp(ts)
-        }
-
         Task {
-            await SelfUpdater.update(dmgURL: dmgURL) { [weak self] state in
+            let didInstall = await SelfUpdater.update(dmgURL: dmgURL) { [weak self] state in
                 Task { @MainActor in
                     self?.selfUpdateState = state
                 }
+            }
+            if didInstall, update.isRolling, let ts = update.publishedAt {
+                UpdateChecker.recordInstalledRollingTimestamp(ts)
             }
         }
     }
