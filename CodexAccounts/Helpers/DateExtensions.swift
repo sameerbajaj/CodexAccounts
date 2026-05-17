@@ -27,7 +27,7 @@ extension Date {
         if hours >= 24 {
             let days = hours / 24
             let remainingHours = hours % 24
-            return "in \(days)d \(remainingHours)h"
+            return "in \(days)d \(remainingHours)h \(minutes)m"
         } else if hours > 0 {
             return "in \(hours)h \(minutes)m"
         } else {
