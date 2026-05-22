@@ -1167,9 +1167,9 @@ final class AccountsViewModel {
         }
 
         return WeeklyAutoKickIndicator(
-            symbol: "bolt.circle.fill",
-            color: .cyan,
-            help: "Fresh weekly reset detected. Activation pending."
+            symbol: "bolt.badge.checkmark",
+            color: .green.opacity(0.95),
+            help: "Fresh weekly reset detected. No auto-kick needed."
         )
     }
 
@@ -1212,17 +1212,6 @@ final class AccountsViewModel {
         }
         guard let usage = usageData[accountID], usage.hasWeeklyWindow else {
             weeklyAutoKickNextCheckAt.removeValue(forKey: accountID)
-            return
-        }
-
-        if shouldAttemptFreshWeeklyResetActivation(account: account, usage: usage, now: now) {
-            let cycleID = usage.weeklyCycleIdentifier
-            if shouldPauseWeeklyAutoKick(account: account, cycleID: cycleID, now: now) {
-                scheduleRetryWeeklyAutoKickCheck(for: accountID, account: account, now: now)
-                return
-            }
-
-            await runWeeklyAutoKickAttempt(for: account, cycleID: cycleID, now: now)
             return
         }
 
@@ -1276,50 +1265,6 @@ final class AccountsViewModel {
         }
 
         return false
-    }
-
-    private func shouldAttemptFreshWeeklyResetActivation(
-        account: CodexAccount,
-        usage: AccountUsage,
-        now: Date
-    ) -> Bool {
-        guard isWeeklyAutoKickEnabled(for: account) else { return false }
-        guard account.authState != .needsReauth, account.authState != .degraded else { return false }
-        guard isFreshWeeklyResetWindow(usage: usage, now: now),
-              let cycleID = usage.weeklyCycleIdentifier
-        else {
-            return false
-        }
-
-        if account.lastWeeklyAutoKickCycleID != cycleID {
-            return true
-        }
-
-        return account.lastWeeklyAutoKickSuccessAt == nil
-            && account.lastWeeklyAutoKickFailure != nil
-            && account.weeklyAutoKickAttemptCount < weeklyAutoKickMaxAttempts
-    }
-
-    private func shouldActivateFreshWeeklyReset(
-        account: CodexAccount,
-        usage: AccountUsage,
-        now: Date
-    ) -> Bool {
-        guard isWeeklyAutoKickEnabled(for: account) else { return false }
-        guard account.authState != .needsReauth, account.authState != .degraded else { return false }
-        guard let weeklyResetAt = usage.weeklyResetAt,
-              let cycleID = usage.weeklyCycleIdentifier
-        else {
-            return false
-        }
-        guard weeklyResetAt > now else { return false }
-        guard account.lastWeeklyAutoKickCycleID != cycleID else { return false }
-
-        if let weeklyRemaining = usage.weeklyRemainingPercent {
-            return weeklyRemaining >= 99.5
-        }
-
-        return usage.isWeeklyPrimary && usage.remainingPercent >= 99.5
     }
 
     private func isFreshWeeklyResetWindow(usage: AccountUsage, now: Date) -> Bool {
@@ -1549,9 +1494,7 @@ final class AccountsViewModel {
         let secondsUntilReset = weeklyResetAt.timeIntervalSince(now)
         let nextCheckAt: Date
 
-        if shouldAttemptFreshWeeklyResetActivation(account: account, usage: usage, now: now) {
-            nextCheckAt = now
-        } else if secondsUntilReset <= -weeklyAutoKickDelay {
+        if secondsUntilReset <= -weeklyAutoKickDelay {
             nextCheckAt = now.addingTimeInterval(weeklyAutoKickInterval)
         } else if secondsUntilReset <= 0 {
             nextCheckAt = weeklyResetAt.addingTimeInterval(weeklyAutoKickDelay)

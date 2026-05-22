@@ -211,7 +211,7 @@ struct CodexAccountsTests {
         #expect(!viewModel.isWeeklyAutoKickEnabled(for: forcedOff))
     }
 
-    @Test func freshWeeklyResetShowsActivationPendingForEligibleAccount() async throws {
+    @Test func freshWeeklyResetShowsNoAutoKickNeededForEligibleAccount() async throws {
         let viewModel = AccountsViewModel()
         let account = makeAccount(weeklyAutoKickOverride: .forceOn)
         let usage = makeUsage(
@@ -224,7 +224,7 @@ struct CodexAccountsTests {
 
         let indicator = viewModel.weeklyAutoKickIndicator(for: account, usage: usage)
 
-        #expect(indicator?.help == "Fresh weekly reset detected. Activation pending.")
+        #expect(indicator?.help == "Fresh weekly reset detected. No auto-kick needed.")
     }
 
     @Test func freshWeeklyResetDoesNotShowPendingAfterCycleAttemptRecorded() async throws {
@@ -244,7 +244,7 @@ struct CodexAccountsTests {
 
         let indicator = viewModel.weeklyAutoKickIndicator(for: account, usage: usage)
 
-        #expect(indicator?.help != "Fresh weekly reset detected. Activation pending.")
+        #expect(indicator?.help != "Fresh weekly reset detected. No auto-kick needed.")
     }
 
     @Test func freshWeeklyResetShowsActivatedAfterCycleSuccess() async throws {
