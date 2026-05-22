@@ -58,7 +58,9 @@ struct AccountCardView: View {
                 }
 
                 if let usage {
-                    usageRows(usage)
+                    TimelineView(.periodic(from: Date(), by: 30)) { _ in
+                        usageRows(usage)
+                    }
                         .padding(.horizontal, 10)
                         .padding(.bottom, isTestingMessage || testResult != nil ? 0 : 9)
                 } else {
