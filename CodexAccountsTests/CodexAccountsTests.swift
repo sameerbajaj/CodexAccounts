@@ -127,6 +127,62 @@ struct CodexAccountsTests {
         #expect(usage.weeklyResetIsOverdue(now: Date(timeIntervalSince1970: 1_200), grace: 180))
     }
 
+    @Test func weeklyResetSlidingDetectionIdentifiesMovingFullWindow() async throws {
+        let window = 7 * 24 * 60 * 60
+        let previousObservedAt = Date(timeIntervalSince1970: 1_000)
+        let currentObservedAt = previousObservedAt.addingTimeInterval(120)
+        let previousResetAt = previousObservedAt.addingTimeInterval(TimeInterval(window))
+        let currentResetAt = currentObservedAt.addingTimeInterval(TimeInterval(window))
+
+        let isSliding = AccountsViewModel.weeklyResetAppearsSliding(
+            previousResetAt: previousResetAt,
+            previousObservedAt: previousObservedAt,
+            currentResetAt: currentResetAt,
+            currentObservedAt: currentObservedAt,
+            weeklyWindowSeconds: window,
+            remainingPercent: 97
+        )
+
+        #expect(isSliding)
+    }
+
+    @Test func weeklyResetSlidingDetectionIgnoresFixedCountdownAtSameRemaining() async throws {
+        let window = 7 * 24 * 60 * 60
+        let previousObservedAt = Date(timeIntervalSince1970: 1_000)
+        let currentObservedAt = previousObservedAt.addingTimeInterval(120)
+        let resetAt = previousObservedAt.addingTimeInterval(TimeInterval(window))
+
+        let isSliding = AccountsViewModel.weeklyResetAppearsSliding(
+            previousResetAt: resetAt,
+            previousObservedAt: previousObservedAt,
+            currentResetAt: resetAt,
+            currentObservedAt: currentObservedAt,
+            weeklyWindowSeconds: window,
+            remainingPercent: 97
+        )
+
+        #expect(!isSliding)
+    }
+
+    @Test func weeklyResetSlidingDetectionRequiresHighRemaining() async throws {
+        let window = 7 * 24 * 60 * 60
+        let previousObservedAt = Date(timeIntervalSince1970: 1_000)
+        let currentObservedAt = previousObservedAt.addingTimeInterval(120)
+        let previousResetAt = previousObservedAt.addingTimeInterval(TimeInterval(window))
+        let currentResetAt = currentObservedAt.addingTimeInterval(TimeInterval(window))
+
+        let isSliding = AccountsViewModel.weeklyResetAppearsSliding(
+            previousResetAt: previousResetAt,
+            previousObservedAt: previousObservedAt,
+            currentResetAt: currentResetAt,
+            currentObservedAt: currentObservedAt,
+            weeklyWindowSeconds: window,
+            remainingPercent: 70
+        )
+
+        #expect(!isSliding)
+    }
+
     @Test func codexAccountDecodeBackfillsWeeklyAutoKickDefaults() async throws {
         let json = """
         {

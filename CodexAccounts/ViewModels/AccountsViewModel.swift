@@ -179,6 +179,7 @@ final class AccountsViewModel {
     private var lifecycleObservers: [NSObjectProtocol] = []
     private var frozenAccountOrder: [String]? = nil
     private var weeklyAutoKickNextCheckAt: [String: Date] = [:]
+    private var slidingWeeklyResetAccountIDs: Set<String> = []
     private var activeRefreshCount = 0
     private var isAuditingSessions = false
     private var isEvaluatingWeeklyAutoKick = false
@@ -201,6 +202,8 @@ final class AccountsViewModel {
     private let weeklyAutoKickNearResetInterval: TimeInterval = 60 * 60
     private let weeklyAutoKickSoonInterval: TimeInterval = 15 * 60
     private let importCodexHome = "\(NSHomeDirectory())/.codex-accounts-import"
+    private let slidingWeeklyResetMinimumRemaining = 95.0
+    private let slidingWeeklyResetVerificationDelay: TimeInterval = 15
 
     // MARK: - Init
 
@@ -398,13 +401,15 @@ final class AccountsViewModel {
         do {
             let result = try await CodexAPIService.fetchUsageWithRefresh(for: accountForUsage, previous: previousUsage)
             var newUsage = result.usage
+            let observedAt = Date()
             if let prev = previousUsage, prev.usedPercent != newUsage.usedPercent {
-                newUsage.lastActivityAt = Date()
+                newUsage.lastActivityAt = observedAt
             } else {
                 newUsage.lastActivityAt = previousUsage?.lastActivityAt
             }
             usageData[account.id] = newUsage
-            scheduleNextWeeklyAutoKickCheck(for: account.id, usage: newUsage, now: Date())
+            updateSlidingWeeklyResetState(for: account.id, account: accountForUsage, usage: newUsage, observedAt: observedAt)
+            scheduleNextWeeklyAutoKickCheck(for: account.id, usage: newUsage, now: observedAt)
             syncWeeklyObservation(for: account.id, usage: newUsage)
 
             let persisted = mergeAccount(result.updatedAccount ?? CodexAPIService.markUsageSuccess(for: accountForUsage))
@@ -968,6 +973,12 @@ final class AccountsViewModel {
         let now = Date()
 
         if let usage,
+           let slidingResetStatus = slidingWeeklyResetIndicator(for: current, usage: usage, now: now)
+        {
+            return slidingResetStatus
+        }
+
+        if let usage,
            let freshResetStatus = freshWeeklyResetIndicator(for: current, usage: usage, now: now)
         {
             return freshResetStatus
@@ -1097,6 +1108,58 @@ final class AccountsViewModel {
         }
     }
 
+    private func slidingWeeklyResetIndicator(
+        for account: CodexAccount,
+        usage: AccountUsage,
+        now: Date
+    ) -> WeeklyAutoKickIndicator? {
+        guard slidingWeeklyResetAccountIDs.contains(account.id),
+              slidingWeeklyResetCandidate(usage: usage, now: now)
+        else {
+            return nil
+        }
+
+        if !isWeeklyAutoKickEnabled(for: account) {
+            return WeeklyAutoKickIndicator(
+                symbol: "bolt.slash",
+                color: .secondary.opacity(0.8),
+                help: "Weekly reset timer appears unanchored, but weekly auto-kick is off for this account."
+            )
+        }
+
+        if account.authState == .needsReauth {
+            return WeeklyAutoKickIndicator(
+                symbol: "bolt.slash.fill",
+                color: .red,
+                help: "Weekly reset timer appears unanchored, but weekly auto-kick needs re-authentication first."
+            )
+        }
+
+        if account.authState == .degraded {
+            return WeeklyAutoKickIndicator(
+                symbol: "bolt.slash.fill",
+                color: .orange,
+                help: "Weekly reset timer appears unanchored, but weekly auto-kick is paused while refresh is failing."
+            )
+        }
+
+        if account.weeklyAutoKickAttemptCount > 0 {
+            let retryDate = account.lastWeeklyAutoKickAttemptAt?.addingTimeInterval(weeklyAutoKickRetryDelay)
+            let retrySuffix = retryDate.map { ", retry \($0.resetDescription)" } ?? ""
+            return WeeklyAutoKickIndicator(
+                symbol: "bolt.circle.fill",
+                color: .cyan,
+                help: "Weekly auto-kick is trying to anchor this sliding reset, attempt \(account.weeklyAutoKickAttemptCount)/\(weeklyAutoKickMaxAttempts)\(retrySuffix)."
+            )
+        }
+
+        return WeeklyAutoKickIndicator(
+            symbol: "bolt.circle.fill",
+            color: .cyan,
+            help: "Weekly reset timer appears unanchored. Auto-kick will try to start the countdown."
+        )
+    }
+
     private func freshWeeklyResetIndicator(
         for account: CodexAccount,
         usage: AccountUsage,
@@ -1215,6 +1278,22 @@ final class AccountsViewModel {
             return
         }
 
+        if shouldAttemptSlidingWeeklyResetActivation(account: account, usage: usage, now: now) {
+            let cycleID = slidingWeeklyResetCycleIdentifier(now: now)
+            if shouldPauseWeeklyAutoKick(account: account, cycleID: cycleID, now: now) {
+                scheduleRetryWeeklyAutoKickCheck(for: accountID, account: account, now: now)
+                return
+            }
+
+            await runWeeklyAutoKickAttempt(
+                for: account,
+                cycleID: cycleID,
+                now: now,
+                verifyAnchoredReset: true
+            )
+            return
+        }
+
         if !usage.weeklyResetIsOverdue(now: now, grace: weeklyAutoKickDelay) {
             scheduleNextWeeklyAutoKickCheck(for: accountID, usage: usage, now: now)
             return
@@ -1267,6 +1346,84 @@ final class AccountsViewModel {
         return false
     }
 
+    private func shouldAttemptSlidingWeeklyResetActivation(
+        account: CodexAccount,
+        usage: AccountUsage,
+        now: Date
+    ) -> Bool {
+        guard slidingWeeklyResetAccountIDs.contains(account.id) else { return false }
+        guard isWeeklyAutoKickEnabled(for: account) else { return false }
+        guard account.authState != .needsReauth, account.authState != .degraded else { return false }
+        return slidingWeeklyResetCandidate(usage: usage, now: now)
+    }
+
+    private func slidingWeeklyResetCandidate(usage: AccountUsage, now: Date) -> Bool {
+        guard let resetAt = usage.weeklyResetAt,
+              resetAt > now,
+              let remaining = weeklyRemainingPercent(for: usage),
+              remaining >= slidingWeeklyResetMinimumRemaining
+        else {
+            return false
+        }
+
+        let window = TimeInterval(usage.weeklyWindowSeconds ?? 7 * 24 * 60 * 60)
+        let secondsUntilReset = resetAt.timeIntervalSince(now)
+        return abs(secondsUntilReset - window) <= AccountsViewModel.slidingResetFullWindowTolerance
+    }
+
+    private func weeklyRemainingPercent(for usage: AccountUsage) -> Double? {
+        usage.weeklyRemainingPercent ?? (usage.isWeeklyPrimary ? usage.remainingPercent : nil)
+    }
+
+    private func slidingWeeklyResetCycleIdentifier(now: Date) -> String {
+        "sliding-\(Int(now.timeIntervalSince1970 / 86_400))"
+    }
+
+    static let slidingResetFullWindowTolerance: TimeInterval = 15 * 60
+    static let slidingResetMinimumObservationGap: TimeInterval = 10
+
+    static func weeklyResetAppearsSliding(
+        previousResetAt: Date?,
+        previousObservedAt: Date?,
+        currentResetAt: Date?,
+        currentObservedAt: Date,
+        weeklyWindowSeconds: Int?,
+        remainingPercent: Double?,
+        minimumRemainingPercent: Double = 95
+    ) -> Bool {
+        guard let previousResetAt,
+              let previousObservedAt,
+              let currentResetAt,
+              let remainingPercent,
+              remainingPercent >= minimumRemainingPercent,
+              currentResetAt > currentObservedAt
+        else {
+            return false
+        }
+
+        let window = TimeInterval(weeklyWindowSeconds ?? 7 * 24 * 60 * 60)
+        guard window >= TimeInterval(AccountUsage.weeklyWindowThresholdSeconds) else {
+            return false
+        }
+
+        let previousSecondsUntilReset = previousResetAt.timeIntervalSince(previousObservedAt)
+        let currentSecondsUntilReset = currentResetAt.timeIntervalSince(currentObservedAt)
+        guard abs(previousSecondsUntilReset - window) <= slidingResetFullWindowTolerance,
+              abs(currentSecondsUntilReset - window) <= slidingResetFullWindowTolerance
+        else {
+            return false
+        }
+
+        let elapsed = currentObservedAt.timeIntervalSince(previousObservedAt)
+        guard elapsed >= slidingResetMinimumObservationGap else {
+            return false
+        }
+
+        let resetDelta = currentResetAt.timeIntervalSince(previousResetAt)
+        let deltaTolerance = max(5, min(120, elapsed * 0.2))
+        return abs(resetDelta - elapsed) <= deltaTolerance
+    }
+
     private func isFreshWeeklyResetWindow(usage: AccountUsage, now: Date) -> Bool {
         guard let weeklyResetAt = usage.weeklyResetAt,
               usage.weeklyCycleIdentifier != nil,
@@ -1282,7 +1439,12 @@ final class AccountsViewModel {
         return usage.isWeeklyPrimary && usage.remainingPercent >= 99.5
     }
 
-    private func runWeeklyAutoKickAttempt(for account: CodexAccount, cycleID: String?, now: Date) async {
+    private func runWeeklyAutoKickAttempt(
+        for account: CodexAccount,
+        cycleID: String?,
+        now: Date,
+        verifyAnchoredReset: Bool = false
+    ) async {
         guard let attemptAccount = markWeeklyAutoKickAttempt(for: account.id, cycleID: cycleID, now: now) else { return }
 
         let result = await TestMessageService.send(account: attemptAccount)
@@ -1297,7 +1459,7 @@ final class AccountsViewModel {
         try? await Task.sleep(for: .seconds(weeklyAutoKickActivationDelay))
         await refreshAccount(attemptAccount, trigger: .timer)
 
-        guard let updatedUsage = usageData[account.id], updatedUsage.hasWeeklyWindow else {
+        guard var updatedUsage = usageData[account.id], updatedUsage.hasWeeklyWindow else {
             recordWeeklyAutoKickFailure(for: account.id, message: "Usage did not refresh after auto-kick")
             if let updatedAccount = currentAccount(id: account.id) {
                 scheduleRetryWeeklyAutoKickCheck(for: account.id, account: updatedAccount, now: now)
@@ -1311,6 +1473,50 @@ final class AccountsViewModel {
                 scheduleRetryWeeklyAutoKickCheck(for: account.id, account: updatedAccount, now: now)
             }
             return
+        }
+
+        if verifyAnchoredReset {
+            guard let firstResetAt = updatedUsage.weeklyResetAt else {
+                recordWeeklyAutoKickFailure(for: account.id, message: "Usage did not include a weekly reset after auto-kick")
+                if let updatedAccount = currentAccount(id: account.id) {
+                    scheduleRetryWeeklyAutoKickCheck(for: account.id, account: updatedAccount, now: now)
+                }
+                return
+            }
+
+            let firstObservedAt = Date()
+            try? await Task.sleep(for: .seconds(slidingWeeklyResetVerificationDelay))
+            await refreshAccount(currentAccount(id: account.id) ?? attemptAccount, trigger: .timer)
+
+            guard let verifiedUsage = usageData[account.id], verifiedUsage.hasWeeklyWindow else {
+                recordWeeklyAutoKickFailure(for: account.id, message: "Usage did not refresh during reset anchor verification")
+                if let updatedAccount = currentAccount(id: account.id) {
+                    scheduleRetryWeeklyAutoKickCheck(for: account.id, account: updatedAccount, now: now)
+                }
+                return
+            }
+
+            let verifiedAt = Date()
+            let stillSliding = AccountsViewModel.weeklyResetAppearsSliding(
+                previousResetAt: firstResetAt,
+                previousObservedAt: firstObservedAt,
+                currentResetAt: verifiedUsage.weeklyResetAt,
+                currentObservedAt: verifiedAt,
+                weeklyWindowSeconds: verifiedUsage.weeklyWindowSeconds,
+                remainingPercent: weeklyRemainingPercent(for: verifiedUsage),
+                minimumRemainingPercent: slidingWeeklyResetMinimumRemaining
+            )
+
+            if stillSliding {
+                recordWeeklyAutoKickFailure(for: account.id, message: "Weekly reset timer still looks unanchored")
+                if let updatedAccount = currentAccount(id: account.id) {
+                    scheduleRetryWeeklyAutoKickCheck(for: account.id, account: updatedAccount, now: now)
+                }
+                return
+            }
+
+            slidingWeeklyResetAccountIDs.remove(account.id)
+            updatedUsage = verifiedUsage
         }
 
         recordWeeklyAutoKickSuccess(for: account.id, at: Date())
@@ -1435,13 +1641,38 @@ final class AccountsViewModel {
         guard observedResetAt != previousObservedResetAt else { return }
 
         accounts[idx].lastObservedWeeklyResetAt = observedResetAt
-        accounts[idx].lastWeeklyAutoKickFailure = nil
-        accounts[idx].weeklyAutoKickAttemptCount = 0
-        if observedResetAt != nil {
-            accounts[idx].lastWeeklyAutoKickAttemptAt = nil
+        if !slidingWeeklyResetAccountIDs.contains(accountID) {
+            accounts[idx].lastWeeklyAutoKickFailure = nil
+            accounts[idx].weeklyAutoKickAttemptCount = 0
+            if observedResetAt != nil {
+                accounts[idx].lastWeeklyAutoKickAttemptAt = nil
+            }
         }
         scheduleNextWeeklyAutoKickCheck(for: accountID, usage: usage, now: Date())
         persistAccounts()
+    }
+
+    private func updateSlidingWeeklyResetState(
+        for accountID: String,
+        account: CodexAccount,
+        usage: AccountUsage,
+        observedAt: Date
+    ) {
+        let isSliding = AccountsViewModel.weeklyResetAppearsSliding(
+            previousResetAt: account.lastObservedWeeklyResetAt,
+            previousObservedAt: account.lastSuccessfulUsageAt,
+            currentResetAt: usage.weeklyResetAt,
+            currentObservedAt: observedAt,
+            weeklyWindowSeconds: usage.weeklyWindowSeconds,
+            remainingPercent: weeklyRemainingPercent(for: usage),
+            minimumRemainingPercent: slidingWeeklyResetMinimumRemaining
+        )
+
+        if isSliding {
+            slidingWeeklyResetAccountIDs.insert(accountID)
+        } else {
+            slidingWeeklyResetAccountIDs.remove(accountID)
+        }
     }
 
     @discardableResult
@@ -1494,7 +1725,9 @@ final class AccountsViewModel {
         let secondsUntilReset = weeklyResetAt.timeIntervalSince(now)
         let nextCheckAt: Date
 
-        if secondsUntilReset <= -weeklyAutoKickDelay {
+        if slidingWeeklyResetAccountIDs.contains(accountID) {
+            nextCheckAt = now
+        } else if secondsUntilReset <= -weeklyAutoKickDelay {
             nextCheckAt = now.addingTimeInterval(weeklyAutoKickInterval)
         } else if secondsUntilReset <= 0 {
             nextCheckAt = weeklyResetAt.addingTimeInterval(weeklyAutoKickDelay)
