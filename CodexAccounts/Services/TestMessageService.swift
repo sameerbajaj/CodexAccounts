@@ -25,9 +25,25 @@ enum TestMessageService {
     private static let cliTimeout: TimeInterval = 45
     private static let primaryResponsesURL = "https://api.openai.com/v1/responses"
     private static let fallbackResponsesURL = "https://chatgpt.com/backend-api/responses"
+    private static let manualTestPrompt = "Reply with exactly: OK"
+    private static let autoKickActivationPrompt = """
+    Confirm this Codex account is active by writing two short sentences. Mention that this is a weekly usage activation check and include the word active.
+    """
 
     static func send(account: CodexAccount) async -> TestMessageResult {
-        let cliResult = await sendViaCLI(account: account)
+        await send(account: account, prompt: manualTestPrompt, maxOutputTokens: 16)
+    }
+
+    static func sendAutoKickActivation(account: CodexAccount) async -> TestMessageResult {
+        await send(account: account, prompt: autoKickActivationPrompt, maxOutputTokens: 96)
+    }
+
+    private static func send(
+        account: CodexAccount,
+        prompt: String,
+        maxOutputTokens: Int
+    ) async -> TestMessageResult {
+        let cliResult = await sendViaCLI(account: account, prompt: prompt)
         if cliResult.success {
             return cliResult
         }
@@ -36,7 +52,7 @@ enum TestMessageService {
             return cliResult
         }
 
-        let apiResult = await sendViaAPI(account: account)
+        let apiResult = await sendViaAPI(account: account, prompt: prompt, maxOutputTokens: maxOutputTokens)
         if apiResult.success {
             return apiResult
         }
@@ -50,7 +66,7 @@ enum TestMessageService {
         return apiResult
     }
 
-    private static func sendViaCLI(account: CodexAccount) async -> TestMessageResult {
+    private static func sendViaCLI(account: CodexAccount, prompt: String) async -> TestMessageResult {
         guard let codexExecutable = resolveCodexExecutable() else {
             return .fail("Codex CLI not found. Install Codex or add it to PATH.")
         }
@@ -85,7 +101,7 @@ enum TestMessageService {
             "--color", "never",
             "--output-last-message", outputURL.path,
             "-C", runRoot.path,
-            "Reply with exactly: OK"
+            prompt
         ]
 
         var env = ProcessInfo.processInfo.environment
@@ -194,11 +210,15 @@ enum TestMessageService {
         return value
     }
 
-    private static func sendViaAPI(account: CodexAccount) async -> TestMessageResult {
+    private static func sendViaAPI(
+        account: CodexAccount,
+        prompt: String,
+        maxOutputTokens: Int
+    ) async -> TestMessageResult {
         let body: [String: Any] = [
             "model": "codex-mini-latest",
-            "input": "Reply with exactly: OK",
-            "max_output_tokens": 16
+            "input": prompt,
+            "max_output_tokens": maxOutputTokens
         ]
 
         let payload: Data

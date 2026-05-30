@@ -193,7 +193,7 @@ final class AccountsViewModel {
     private let weeklyAutoKickInterval: TimeInterval = 60
     private let weeklyAutoKickDelay: TimeInterval = 5 * 60
     private let weeklyAutoKickRetryDelay: TimeInterval = 3 * 60
-    private let weeklyAutoKickActivationDelay: TimeInterval = 8
+    private let weeklyAutoKickActivationDelay: TimeInterval = 20
     private let weeklyAutoKickMaxAttempts = 3
     private let weeklyResetDisplayGrace: TimeInterval = 60
     private let weeklyAutoKickNearResetThreshold: TimeInterval = 24 * 60 * 60
@@ -203,7 +203,7 @@ final class AccountsViewModel {
     private let weeklyAutoKickSoonInterval: TimeInterval = 15 * 60
     private let importCodexHome = "\(NSHomeDirectory())/.codex-accounts-import"
     private let slidingWeeklyResetMinimumRemaining = 95.0
-    private let slidingWeeklyResetVerificationDelay: TimeInterval = 15
+    private let slidingWeeklyResetVerificationDelay: TimeInterval = 30
 
     // MARK: - Init
 
@@ -1447,7 +1447,7 @@ final class AccountsViewModel {
     ) async {
         guard let attemptAccount = markWeeklyAutoKickAttempt(for: account.id, cycleID: cycleID, now: now) else { return }
 
-        let result = await TestMessageService.send(account: attemptAccount)
+        let result = await TestMessageService.sendAutoKickActivation(account: attemptAccount)
         if !result.success {
             recordWeeklyAutoKickFailure(for: account.id, message: result.message)
             if let updatedAccount = currentAccount(id: account.id) {
