@@ -215,6 +215,7 @@ struct CodexAccount: Identifiable, Codable, Hashable {
 
 struct AccountUsage: Equatable {
     static let weeklyWindowThresholdSeconds = 3 * 24 * 60 * 60
+    static let monthlyWindowThresholdSeconds = 25 * 24 * 60 * 60
 
     /// Codex usage shown in the primary bar (short window when available, otherwise weekly)
     var usedPercent: Double

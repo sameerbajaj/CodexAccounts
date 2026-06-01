@@ -216,13 +216,13 @@ struct AccountCardView: View {
                 Text("\(Int(clampedPercent(usage.remainingPercent)))%")
                     .font(.system(size: 13, weight: .bold, design: .monospaced))
                     .foregroundStyle(percentColor(for: usage.remainingPercent))
-                if usage.isWeeklyPrimary {
-                    Text("Weekly")
+                if let primaryWindowLabel = windowLabel(for: usage.primaryWindowSeconds) {
+                    Text(primaryWindowLabel)
                         .font(.system(size: 7.5, weight: .semibold))
                         .foregroundStyle(Color.white.opacity(0.62))
                 }
             }
-            .frame(width: usage.isWeeklyPrimary ? 48 : 40, alignment: .trailing)
+            .frame(width: windowLabel(for: usage.primaryWindowSeconds) == nil ? 40 : 54, alignment: .trailing)
         }
         .padding(.top, 6)
 
@@ -279,10 +279,12 @@ struct AccountCardView: View {
 
     @ViewBuilder
     private func weeklyUsageRow(weeklyRemaining: Double, weeklyResetAt: Date?) -> some View {
+        let windowLabel = windowLabel(for: usage?.weeklyWindowSeconds)
+        let windowPrefix = windowLabel.map { "\($0) " } ?? ""
         switch usageDetailMode {
         case .compact:
             HStack(spacing: 4) {
-                Text("Weekly \(Int(clampedPercent(weeklyRemaining)))% left")
+                Text("\(windowPrefix)\(Int(clampedPercent(weeklyRemaining)))% left")
                     .font(.system(size: 9, weight: .medium))
                     .foregroundStyle(Color.white.opacity(0.70))
                 if let weeklyResetAt {
@@ -295,7 +297,7 @@ struct AccountCardView: View {
         case .detailed:
             VStack(alignment: .leading, spacing: 4) {
                 HStack(spacing: 6) {
-                    Text("Weekly")
+                    Text(windowLabel ?? "Weekly")
                         .font(.system(size: 8.5, weight: .bold))
                         .textCase(.uppercase)
                         .foregroundStyle(Color.white.opacity(0.60))
@@ -517,16 +519,41 @@ struct AccountCardView: View {
 
     private func resetSummary(for usage: AccountUsage, resetAt: Date) -> String {
         if usage.isWeeklyPrimary, usage.weeklyResetIsOverdue(grace: 60) {
-            return "Weekly awaiting activation"
+            return awaitingActivationLabel(for: usage.primaryWindowSeconds ?? usage.weeklyWindowSeconds)
         }
-        return "\(usage.isWeeklyPrimary ? "Weekly resets" : "Resets") \(resetAt.resetDescription)"
+        return "\(resetPrefix(for: usage.primaryWindowSeconds ?? usage.weeklyWindowSeconds)) \(resetAt.resetDescription)"
     }
 
     private func weeklyResetDescription(for resetAt: Date) -> String {
         if let usage, usage.weeklyResetIsOverdue(grace: 60) {
-            return "Awaiting activation"
+            return awaitingActivationLabel(for: usage.weeklyWindowSeconds)
         }
         return "resets \(resetAt.resetDescription)"
+    }
+
+    private func windowLabel(for windowSeconds: Int?) -> String? {
+        guard let windowSeconds, windowSeconds > 0 else { return nil }
+        if windowSeconds >= AccountUsage.monthlyWindowThresholdSeconds {
+            return "Monthly"
+        }
+        if windowSeconds >= AccountUsage.weeklyWindowThresholdSeconds {
+            return "Weekly"
+        }
+        return nil
+    }
+
+    private func resetPrefix(for windowSeconds: Int?) -> String {
+        if let label = windowLabel(for: windowSeconds) {
+            return "\(label) resets"
+        }
+        return "Resets"
+    }
+
+    private func awaitingActivationLabel(for windowSeconds: Int?) -> String {
+        if let label = windowLabel(for: windowSeconds) {
+            return "\(label) awaiting activation"
+        }
+        return "Awaiting activation"
     }
 
     private var stateIconName: String {
