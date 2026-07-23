@@ -388,6 +388,205 @@ struct CodexAccountsTests {
         ])
     }
 
+    @Test func monthlyWindowParsingZeroUsed() async throws {
+        let json = """
+        {
+            "plan_type": "free",
+            "rate_limit": {
+                "allowed": true,
+                "limit_reached": false,
+                "primary_window": {
+                    "used_percent": 0,
+                    "reset_at": 1774321200,
+                    "limit_window_seconds": 2592000
+                },
+                "secondary_window": null
+            }
+        }
+        """
+        let response = try JSONDecoder().decode(CodexUsageResponse.self, from: Data(json.utf8))
+        let usage = AccountUsage(from: response)
+
+        #expect(usage.remainingPercent == 100)
+        #expect(usage.primaryWindow?.kind == .monthly)
+        #expect(usage.primaryWindow?.displayLabel == "30-day")
+        #expect(usage.allowed == true)
+        #expect(!usage.hasWeeklyWindow)
+        #expect(!usage.isLimitReached)
+    }
+
+    @Test func monthlyWindowParsingLimitReached() async throws {
+        let json = """
+        {
+            "plan_type": "free",
+            "rate_limit": {
+                "allowed": false,
+                "limit_reached": true,
+                "primary_window": {
+                    "used_percent": 100,
+                    "reset_at": 1774321200,
+                    "limit_window_seconds": 2592000
+                },
+                "secondary_window": null
+            }
+        }
+        """
+        let response = try JSONDecoder().decode(CodexUsageResponse.self, from: Data(json.utf8))
+        let usage = AccountUsage(from: response)
+
+        #expect(usage.remainingPercent == 0)
+        #expect(usage.primaryWindow?.kind == .monthly)
+        #expect(usage.isLimitReached == true)
+        #expect(!usage.hasWeeklyWindow)
+    }
+
+    @Test func legacyTwoWindowPayloadPreservesOrder() async throws {
+        let json = """
+        {
+            "plan_type": "pro",
+            "rate_limit": {
+                "allowed": true,
+                "limit_reached": false,
+                "primary_window": {
+                    "used_percent": 10,
+                    "reset_at": 1774321200,
+                    "limit_window_seconds": 18000
+                },
+                "secondary_window": {
+                    "used_percent": 25,
+                    "reset_at": 1774926000,
+                    "limit_window_seconds": 604800
+                }
+            }
+        }
+        """
+        let response = try JSONDecoder().decode(CodexUsageResponse.self, from: Data(json.utf8))
+        let usage = AccountUsage(from: response)
+
+        #expect(usage.primaryWindow?.kind == .shortTerm)
+        #expect(usage.primaryWindow?.displayLabel == "5-hour")
+        #expect(usage.secondaryWindow?.kind == .weekly)
+        #expect(usage.secondaryWindow?.displayLabel == "Weekly")
+        #expect(usage.hasWeeklyWindow == true)
+        #expect(usage.weeklyUsedPercent == 25)
+    }
+
+    @Test func nullSecondaryWindowHandling() async throws {
+        let json = """
+        {
+            "plan_type": "go",
+            "rate_limit": {
+                "allowed": true,
+                "primary_window": {
+                    "used_percent": 5,
+                    "reset_at": 1774321200,
+                    "limit_window_seconds": 2592000
+                },
+                "secondary_window": null
+            }
+        }
+        """
+        let response = try JSONDecoder().decode(CodexUsageResponse.self, from: Data(json.utf8))
+        let usage = AccountUsage(from: response)
+
+        #expect(usage.secondaryWindow == nil)
+        #expect(!usage.hasWeeklyWindow)
+    }
+
+    @Test func missingOptionalFieldsInUsagePayload() async throws {
+        let json = """
+        {
+            "rate_limit": {
+                "primary_window": {
+                    "used_percent": 15,
+                    "limit_window_seconds": 864000
+                }
+            }
+        }
+        """
+        let response = try JSONDecoder().decode(CodexUsageResponse.self, from: Data(json.utf8))
+        let usage = AccountUsage(from: response)
+
+        #expect(usage.usedPercent == 15)
+        #expect(usage.primaryWindow?.kind == .custom)
+        #expect(usage.primaryWindow?.displayLabel == "10-day")
+        #expect(usage.allowed == nil)
+        #expect(usage.secondaryWindow == nil)
+    }
+
+    @Test func monthlyWindowExcludedFromWeeklyAutoKick() async throws {
+        let viewModel = AccountsViewModel()
+        let account = makeAccount(weeklyAutoKickOverride: .forceOn)
+        let resetAt = Date().addingTimeInterval(-100)
+        let usage = AccountUsage(
+            primaryWindow: UsageWindow(
+                usedPercent: 0,
+                resetAt: resetAt,
+                windowDurationSeconds: 2592000,
+                kind: .monthly
+            ),
+            secondaryWindow: nil
+        )
+
+        viewModel.accounts = [account]
+        viewModel.usageData[account.id] = usage
+
+        #expect(!usage.hasWeeklyWindow)
+        #expect(!usage.weeklyResetIsOverdue(now: Date()))
+        let indicator = viewModel.weeklyAutoKickIndicator(for: account, usage: usage)
+        #expect(indicator == nil)
+    }
+
+    @Test func usageWindowDisplayLabelFormat() async throws {
+        let short = UsageWindow(usedPercent: 0, resetAt: nil, windowDurationSeconds: 18000)
+        let weekly = UsageWindow(usedPercent: 0, resetAt: nil, windowDurationSeconds: 604800)
+        let monthly = UsageWindow(usedPercent: 0, resetAt: nil, windowDurationSeconds: 2592000)
+        let custom = UsageWindow(usedPercent: 0, resetAt: nil, windowDurationSeconds: 864000)
+
+        #expect(short.displayLabel == "5-hour")
+        #expect(weekly.displayLabel == "Weekly")
+        #expect(monthly.displayLabel == "30-day")
+        #expect(custom.displayLabel == "10-day")
+    }
+
+    @Test func successfulUnchangedFetchRecordsSuccess() async throws {
+        let account = makeAccount()
+        let initialUsage = AccountUsage(
+            usedPercent: 0,
+            resetAt: Date().addingTimeInterval(3600),
+            primaryWindowSeconds: 2592000,
+            weeklyUsedPercent: nil,
+            weeklyResetAt: nil,
+            weeklyWindowSeconds: nil,
+            creditsBalance: nil,
+            hasCredits: false,
+            isUnlimited: false,
+            lastUpdated: Date(timeIntervalSince1970: 100),
+            error: nil
+        )
+
+        let responseJSON = """
+        {
+            "plan_type": "free",
+            "rate_limit": {
+                "allowed": true,
+                "limit_reached": false,
+                "primary_window": {
+                    "used_percent": 0,
+                    "reset_at": 1774321200,
+                    "limit_window_seconds": 2592000
+                }
+            }
+        }
+        """
+        let response = try JSONDecoder().decode(CodexUsageResponse.self, from: Data(responseJSON.utf8))
+        let newUsage = AccountUsage(from: response, previous: initialUsage)
+
+        #expect(newUsage.usedPercent == 0)
+        #expect(newUsage.error == nil)
+        #expect(newUsage.lastUpdated > initialUsage.lastUpdated)
+    }
+
     private func makeAccount(
         email: String = "test@example.com",
         lastSuccessfulTokenRefreshAt: Date? = nil,

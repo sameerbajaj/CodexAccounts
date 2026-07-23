@@ -213,50 +213,295 @@ struct CodexAccount: Identifiable, Codable, Hashable {
     }
 }
 
-struct AccountUsage: Equatable {
-    static let weeklyWindowThresholdSeconds = 3 * 24 * 60 * 60
-    static let monthlyWindowThresholdSeconds = 25 * 24 * 60 * 60
+enum UsageWindowKind: String, Codable, CaseIterable {
+    case shortTerm = "Short-term"
+    case weekly = "Weekly"
+    case monthly = "Monthly"
+    case custom = "Custom"
 
-    /// Codex usage shown in the primary bar (short window when available, otherwise weekly)
+    static func classify(seconds: Int) -> UsageWindowKind {
+        if seconds <= 3 * 24 * 3600 {
+            return .shortTerm
+        } else if seconds >= 5 * 24 * 3600 && seconds <= 10 * 24 * 3600 {
+            return .weekly
+        } else if seconds >= 25 * 24 * 3600 && seconds <= 35 * 24 * 3600 {
+            return .monthly
+        } else {
+            return .custom
+        }
+    }
+
+    var displayLabel: String {
+        switch self {
+        case .shortTerm: return "Short-term"
+        case .weekly: return "Weekly"
+        case .monthly: return "30-day"
+        case .custom: return "Custom"
+        }
+    }
+}
+
+struct UsageWindow: Equatable {
     var usedPercent: Double
     var resetAt: Date?
-    var primaryWindowSeconds: Int?
-    var weeklyUsedPercent: Double?
-    var weeklyResetAt: Date?
-    var weeklyWindowSeconds: Int?
-    var creditsBalance: Double?
-    var hasCredits: Bool
-    var isUnlimited: Bool
-    var lastUpdated: Date
-    var error: String?
-    /// Tracks when usage % last changed (for "recently active" sort)
-    var lastActivityAt: Date?
+    var resetAfterSeconds: Int?
+    var windowDurationSeconds: Int
+    var kind: UsageWindowKind
+    var allowed: Bool?
+    var limitReached: Bool?
+
+    init(
+        usedPercent: Double,
+        resetAt: Date?,
+        resetAfterSeconds: Int? = nil,
+        windowDurationSeconds: Int,
+        kind: UsageWindowKind? = nil,
+        allowed: Bool? = nil,
+        limitReached: Bool? = nil
+    ) {
+        self.usedPercent = usedPercent
+        self.resetAt = resetAt
+        self.resetAfterSeconds = resetAfterSeconds
+        self.windowDurationSeconds = windowDurationSeconds
+        self.kind = kind ?? UsageWindowKind.classify(seconds: windowDurationSeconds)
+        self.allowed = allowed
+        self.limitReached = limitReached
+    }
 
     var remainingPercent: Double {
         max(0, 100 - usedPercent)
     }
 
-    var weeklyRemainingPercent: Double? {
-        guard let weeklyUsedPercent else { return nil }
-        return max(0, 100 - weeklyUsedPercent)
-    }
-
-    var hasWeeklyWindow: Bool {
-        weeklyUsedPercent != nil
-    }
-
-    var isWeeklyPrimary: Bool {
-        guard hasWeeklyWindow else { return false }
-        if let primaryWindowSeconds {
-            return primaryWindowSeconds >= Self.weeklyWindowThresholdSeconds
-        }
-        if let weeklyResetAt {
-            return resetAt == weeklyResetAt
-        }
+    var isLimitReached: Bool {
+        if allowed == false { return true }
+        if limitReached == true { return true }
         return false
     }
 
-    /// Alias kept so existing references compile
+    var displayLabel: String {
+        switch kind {
+        case .shortTerm:
+            if windowDurationSeconds == 18000 {
+                return "5-hour"
+            } else if windowDurationSeconds > 0 && windowDurationSeconds % 3600 == 0 {
+                let hours = windowDurationSeconds / 3600
+                if hours < 24 {
+                    return "\(hours)-hour"
+                } else {
+                    let days = hours / 24
+                    return "\(days)-day"
+                }
+            } else {
+                return "Short-term"
+            }
+        case .weekly:
+            return "Weekly"
+        case .monthly:
+            return "30-day"
+        case .custom:
+            let days = windowDurationSeconds / 86400
+            if days >= 1 {
+                return "\(days)-day"
+            } else {
+                let hours = windowDurationSeconds / 3600
+                return "\(hours)-hour"
+            }
+        }
+    }
+}
+
+struct AccountUsage: Equatable {
+    static let weeklyWindowThresholdSeconds = 5 * 24 * 60 * 60
+    static let monthlyWindowThresholdSeconds = 25 * 24 * 60 * 60
+
+    var primaryWindow: UsageWindow?
+    var secondaryWindow: UsageWindow?
+    var additionalWindows: [UsageWindow]
+
+    var allowed: Bool?
+    var limitReached: Bool?
+    var rateLimitReachedType: String?
+    var creditsBalance: Double?
+    var hasCredits: Bool
+    var isUnlimited: Bool
+    var lastUpdated: Date
+    var error: String?
+    var lastActivityAt: Date?
+
+    init(
+        primaryWindow: UsageWindow? = nil,
+        secondaryWindow: UsageWindow? = nil,
+        additionalWindows: [UsageWindow] = [],
+        allowed: Bool? = nil,
+        limitReached: Bool? = nil,
+        rateLimitReachedType: String? = nil,
+        creditsBalance: Double? = nil,
+        hasCredits: Bool = false,
+        isUnlimited: Bool = false,
+        lastUpdated: Date = Date(),
+        error: String? = nil,
+        lastActivityAt: Date? = nil
+    ) {
+        self.primaryWindow = primaryWindow
+        self.secondaryWindow = secondaryWindow
+        self.additionalWindows = additionalWindows
+        self.allowed = allowed
+        self.limitReached = limitReached
+        self.rateLimitReachedType = rateLimitReachedType
+        self.creditsBalance = creditsBalance
+        self.hasCredits = hasCredits
+        self.isUnlimited = isUnlimited
+        self.lastUpdated = lastUpdated
+        self.error = error
+        self.lastActivityAt = lastActivityAt
+    }
+
+    init(
+        usedPercent: Double,
+        resetAt: Date?,
+        primaryWindowSeconds: Int?,
+        weeklyUsedPercent: Double?,
+        weeklyResetAt: Date?,
+        weeklyWindowSeconds: Int?,
+        creditsBalance: Double?,
+        hasCredits: Bool,
+        isUnlimited: Bool,
+        lastUpdated: Date,
+        error: String?,
+        lastActivityAt: Date? = nil,
+        allowed: Bool? = nil,
+        limitReached: Bool? = nil,
+        rateLimitReachedType: String? = nil
+    ) {
+        var primWindow: UsageWindow? = nil
+        if let sec = primaryWindowSeconds {
+            primWindow = UsageWindow(
+                usedPercent: usedPercent,
+                resetAt: resetAt,
+                windowDurationSeconds: sec,
+                kind: UsageWindowKind.classify(seconds: sec),
+                allowed: allowed,
+                limitReached: limitReached
+            )
+        } else {
+            primWindow = UsageWindow(
+                usedPercent: usedPercent,
+                resetAt: resetAt,
+                windowDurationSeconds: 0,
+                kind: .shortTerm,
+                allowed: allowed,
+                limitReached: limitReached
+            )
+        }
+
+        var secWindow: UsageWindow? = nil
+        if let wUsed = weeklyUsedPercent, let wSec = weeklyWindowSeconds {
+            secWindow = UsageWindow(
+                usedPercent: wUsed,
+                resetAt: weeklyResetAt,
+                windowDurationSeconds: wSec,
+                kind: UsageWindowKind.classify(seconds: wSec),
+                allowed: allowed,
+                limitReached: limitReached
+            )
+        }
+
+        if let prim = primWindow, let sec = secWindow, prim.windowDurationSeconds == sec.windowDurationSeconds {
+            self.primaryWindow = prim
+            self.secondaryWindow = nil
+        } else {
+            self.primaryWindow = primWindow
+            self.secondaryWindow = secWindow
+        }
+
+        self.additionalWindows = []
+        self.allowed = allowed
+        self.limitReached = limitReached
+        self.rateLimitReachedType = rateLimitReachedType
+        self.creditsBalance = creditsBalance
+        self.hasCredits = hasCredits
+        self.isUnlimited = isUnlimited
+        self.lastUpdated = lastUpdated
+        self.error = error
+        self.lastActivityAt = lastActivityAt
+    }
+
+    var usedPercent: Double {
+        get { primaryWindow?.usedPercent ?? 0 }
+        set {
+            if primaryWindow != nil {
+                primaryWindow?.usedPercent = newValue
+            } else {
+                primaryWindow = UsageWindow(usedPercent: newValue, resetAt: nil, windowDurationSeconds: 0)
+            }
+        }
+    }
+
+    var resetAt: Date? {
+        get { primaryWindow?.resetAt }
+        set { primaryWindow?.resetAt = newValue }
+    }
+
+    var primaryWindowSeconds: Int? {
+        get { primaryWindow?.windowDurationSeconds }
+        set {
+            if let newValue {
+                if primaryWindow != nil {
+                    primaryWindow?.windowDurationSeconds = newValue
+                    primaryWindow?.kind = UsageWindowKind.classify(seconds: newValue)
+                } else {
+                    primaryWindow = UsageWindow(usedPercent: 0, resetAt: nil, windowDurationSeconds: newValue)
+                }
+            }
+        }
+    }
+
+    var weeklyWindow: UsageWindow? {
+        if primaryWindow?.kind == .weekly {
+            return primaryWindow
+        }
+        if secondaryWindow?.kind == .weekly {
+            return secondaryWindow
+        }
+        return additionalWindows.first(where: { $0.kind == .weekly })
+    }
+
+    var weeklyUsedPercent: Double? {
+        weeklyWindow?.usedPercent
+    }
+
+    var weeklyResetAt: Date? {
+        weeklyWindow?.resetAt
+    }
+
+    var weeklyWindowSeconds: Int? {
+        weeklyWindow?.windowDurationSeconds
+    }
+
+    var remainingPercent: Double {
+        primaryWindow?.remainingPercent ?? max(0, 100 - usedPercent)
+    }
+
+    var weeklyRemainingPercent: Double? {
+        weeklyWindow?.remainingPercent
+    }
+
+    var hasWeeklyWindow: Bool {
+        weeklyWindow != nil
+    }
+
+    var isWeeklyPrimary: Bool {
+        primaryWindow?.kind == .weekly
+    }
+
+    var isLimitReached: Bool {
+        if allowed == false { return true }
+        if limitReached == true { return true }
+        if primaryWindow?.isLimitReached == true { return true }
+        if secondaryWindow?.isLimitReached == true { return true }
+        return false
+    }
+
     var lowestRemainingPercent: Double { remainingPercent }
 
     var weeklyCycleIdentifier: String? {
@@ -265,17 +510,16 @@ struct AccountUsage: Equatable {
     }
 
     func weeklyResetIsOverdue(now: Date = Date(), grace: TimeInterval = 0) -> Bool {
-        guard let weeklyResetAt else { return false }
+        guard hasWeeklyWindow, let weeklyResetAt else { return false }
         return now.timeIntervalSince(weeklyResetAt) >= grace
     }
 
     static let placeholder = AccountUsage(
-        usedPercent: 0,
-        resetAt: nil,
-        primaryWindowSeconds: nil,
-        weeklyUsedPercent: nil,
-        weeklyResetAt: nil,
-        weeklyWindowSeconds: nil,
+        primaryWindow: UsageWindow(usedPercent: 0, resetAt: nil, windowDurationSeconds: 0),
+        secondaryWindow: nil,
+        additionalWindows: [],
+        allowed: true,
+        limitReached: false,
         creditsBalance: nil,
         hasCredits: false,
         isUnlimited: false,

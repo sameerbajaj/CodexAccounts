@@ -31,7 +31,14 @@ struct MenuBarLabel: View {
         viewModel.accounts.isEmpty ? nil : viewModel.menuBarRemaining
     }
 
+    private var isLimitReached: Bool {
+        guard let top = viewModel.sortedAccounts.first,
+              let usage = viewModel.usageData[top.id] else { return false }
+        return usage.isLimitReached
+    }
+
     private var statusColor: Color {
+        if isLimitReached { return .red }
         guard let r = remaining else { return .primary }
         if r > 40 { return .green }
         if r > 15 { return .orange }
@@ -39,6 +46,7 @@ struct MenuBarLabel: View {
     }
 
     private var litBars: Int {
+        if isLimitReached { return 0 }
         guard let r = remaining else { return 3 }
         if r >= 75 { return 3 }
         if r >= 40 { return 2 }

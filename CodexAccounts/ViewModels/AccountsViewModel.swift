@@ -140,7 +140,7 @@ final class AccountsViewModel {
 
         var description: String {
             switch self {
-            case .twoMin: return "Top account only, every 2 min"
+            case .twoMin: return "1 account every 2 min (round-robin)"
             case .fiveMin: return "All accounts every 5 min"
             case .manual: return "Only when you tap refresh"
             }
@@ -309,6 +309,9 @@ final class AccountsViewModel {
     }
 
     var statusColor: Color {
+        if let top = sortedAccounts.first, let usage = usageData[top.id], usage.isLimitReached {
+            return .red
+        }
         guard let val = menuBarRemaining ?? topAccountRemaining else { return .secondary }
         if val > 40 { return .green }
         if val > 15 { return .orange }
@@ -556,6 +559,8 @@ final class AccountsViewModel {
         startAutoRefresh()
     }
 
+    private var twoMinRoundRobinIndex = 0
+
     private func startAutoRefresh() {
         refreshTimer?.invalidate()
         refreshTimer = nil
@@ -563,9 +568,15 @@ final class AccountsViewModel {
         refreshTimer = Timer.scheduledTimer(withTimeInterval: interval, repeats: true) { [weak self] _ in
             guard let self else { return }
             Task { @MainActor in
-                if self.refreshInterval == .twoMin, let top = self.sortedAccounts.first {
-                    await self.auditAllSessions(trigger: .timer)
-                    await self.refreshAccount(top, trigger: .timer)
+                if self.refreshInterval == .twoMin {
+                    let list = self.sortedAccounts
+                    if !list.isEmpty {
+                        let idx = self.twoMinRoundRobinIndex % list.count
+                        let target = list[idx]
+                        self.twoMinRoundRobinIndex = (idx + 1) % list.count
+                        await self.auditAllSessions(trigger: .timer)
+                        await self.refreshAccount(target, trigger: .timer)
+                    }
                 } else {
                     await self.refreshAll(trigger: .timer)
                 }

@@ -6,8 +6,10 @@
 //
 
 import Foundation
+import os
 
 enum CodexAPIService {
+    private static let logger = Logger(subsystem: "luminoslabs.CodexAccounts", category: "CodexAPI")
     private static let usageURL = "https://chatgpt.com/backend-api/wham/usage"
     private static let refreshEndpoint = "https://auth.openai.com/oauth/token"
     private static let clientID = "app_EMoamEEZ73f0CkXaXp7hrann"
@@ -245,22 +247,31 @@ enum CodexAPIService {
         }
 
         guard let http = response as? HTTPURLResponse else {
+            logger.error("Usage fetch failed: invalid HTTP URL response")
             throw APIError.invalidResponse
         }
+
+        let accountTag = account.shortAccountId ?? String(account.id.prefix(4))
 
         switch http.statusCode {
         case 200 ... 299:
             do {
                 let usageResponse = try JSONDecoder().decode(CodexUsageResponse.self, from: data)
-                return AccountUsage(from: usageResponse, previous: previous)
+                let usage = AccountUsage(from: usageResponse, previous: previous)
+                logger.info("Usage fetch succeeded for [\(accountTag, privacy: .public)] HTTP \(http.statusCode) - Primary window: \(usage.primaryWindowSeconds ?? 0)s used: \(usage.usedPercent)% allowed: \(usage.allowed ?? true)")
+                return usage
             } catch {
+                logger.error("Usage fetch JSON decode failed for [\(accountTag, privacy: .public)]")
                 throw APIError.invalidResponse
             }
         case 401:
+            logger.warning("Usage fetch 401 unauthorized for [\(accountTag, privacy: .public)]")
             throw APIError.unauthorized
         case 403:
+            logger.error("Usage fetch 403 forbidden for [\(accountTag, privacy: .public)]")
             throw APIError.serverError(http.statusCode, responseErrorText(from: data))
         default:
+            logger.error("Usage fetch error HTTP \(http.statusCode) for [\(accountTag, privacy: .public)]")
             throw APIError.serverError(http.statusCode, responseErrorText(from: data))
         }
     }

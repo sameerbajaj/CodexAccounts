@@ -12,34 +12,65 @@ import Foundation
 struct CodexUsageResponse: Decodable {
     let planType: String?
     let rateLimit: RateLimitDetails?
+    let spendControl: SpendControlDetails?
     let credits: CreditDetails?
 
     enum CodingKeys: String, CodingKey {
         case planType = "plan_type"
         case rateLimit = "rate_limit"
+        case spendControl = "spend_control"
         case credits
     }
 
     struct RateLimitDetails: Decodable {
+        let allowed: Bool?
+        let limitReached: Bool?
+        let rateLimitReachedType: String?
         let primaryWindow: WindowSnapshot?
         let secondaryWindow: WindowSnapshot?
 
         enum CodingKeys: String, CodingKey {
+            case allowed
+            case limitReached = "limit_reached"
+            case rateLimitReachedType = "rate_limit_reached_type"
             case primaryWindow = "primary_window"
             case secondaryWindow = "secondary_window"
         }
     }
 
     struct WindowSnapshot: Decodable {
-        let usedPercent: Int
-        let resetAt: Int
-        let limitWindowSeconds: Int
+        let usedPercent: Double
+        let resetAt: Int?
+        let limitWindowSeconds: Int?
+        let resetAfterSeconds: Int?
 
         enum CodingKeys: String, CodingKey {
             case usedPercent = "used_percent"
             case resetAt = "reset_at"
             case limitWindowSeconds = "limit_window_seconds"
+            case resetAfterSeconds = "reset_after_seconds"
         }
+
+        init(from decoder: Decoder) throws {
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+
+            if let d = try? container.decode(Double.self, forKey: .usedPercent) {
+                self.usedPercent = d
+            } else if let i = try? container.decode(Int.self, forKey: .usedPercent) {
+                self.usedPercent = Double(i)
+            } else {
+                self.usedPercent = 0.0
+            }
+
+            self.resetAt = try? container.decode(Int.self, forKey: .resetAt)
+            self.limitWindowSeconds = try? container.decode(Int.self, forKey: .limitWindowSeconds)
+            self.resetAfterSeconds = try? container.decode(Int.self, forKey: .resetAfterSeconds)
+        }
+    }
+
+    struct SpendControlDetails: Decodable {
+        // Tolerant decoding of spend control dictionary if present
+        init(from decoder: Decoder) throws {}
     }
 
     struct CreditDetails: Decodable {
@@ -118,73 +149,55 @@ struct AuthFileContents: Decodable {
 
 extension AccountUsage {
     init(from response: CodexUsageResponse, previous: AccountUsage? = nil) {
-        struct ParsedWindow {
-            let usedPercent: Double
-            let resetAt: Date
-            let limitWindowSeconds: Int
-        }
+        let rateLimit = response.rateLimit
+        let allowed = rateLimit?.allowed
+        let limitReached = rateLimit?.limitReached
+        let rateLimitReachedType = rateLimit?.rateLimitReachedType
 
-        let snapshots = [
-            response.rateLimit?.primaryWindow,
-            response.rateLimit?.secondaryWindow,
-        ]
-        .compactMap { $0 }
-
-        let windows = snapshots.map { snapshot in
-            ParsedWindow(
-                usedPercent: Double(snapshot.usedPercent),
-                resetAt: Date(timeIntervalSince1970: TimeInterval(snapshot.resetAt)),
-                limitWindowSeconds: max(0, snapshot.limitWindowSeconds)
+        func makeWindow(from snapshot: CodexUsageResponse.WindowSnapshot?) -> UsageWindow? {
+            guard let snapshot else { return nil }
+            let duration = max(0, snapshot.limitWindowSeconds ?? 0)
+            let resetDate: Date?
+            if let resetAtInt = snapshot.resetAt {
+                resetDate = Date(timeIntervalSince1970: TimeInterval(resetAtInt))
+            } else if let resetAfterSecs = snapshot.resetAfterSeconds {
+                resetDate = Date().addingTimeInterval(TimeInterval(resetAfterSecs))
+            } else {
+                resetDate = nil
+            }
+            return UsageWindow(
+                usedPercent: snapshot.usedPercent,
+                resetAt: resetDate,
+                resetAfterSeconds: snapshot.resetAfterSeconds,
+                windowDurationSeconds: duration,
+                kind: UsageWindowKind.classify(seconds: duration),
+                allowed: allowed,
+                limitReached: limitReached
             )
         }
 
-        let sortedByDuration = windows.sorted { $0.limitWindowSeconds < $1.limitWindowSeconds }
-        let shortWindow: ParsedWindow?
-        let weeklyWindow: ParsedWindow?
+        let prim = makeWindow(from: rateLimit?.primaryWindow)
+        let sec = makeWindow(from: rateLimit?.secondaryWindow)
 
-        if sortedByDuration.count >= 2 {
-            let shortest = sortedByDuration.first
-            let longest = sortedByDuration.last
-            if let longest, longest.limitWindowSeconds >= AccountUsage.weeklyWindowThresholdSeconds {
-                if let shortest, shortest.limitWindowSeconds < AccountUsage.weeklyWindowThresholdSeconds {
-                    shortWindow = shortest
-                } else {
-                    shortWindow = nil
-                }
-                weeklyWindow = longest
-            } else {
-                shortWindow = shortest
-                weeklyWindow = nil
-            }
-        } else if let onlyWindow = sortedByDuration.first {
-            if onlyWindow.limitWindowSeconds >= AccountUsage.weeklyWindowThresholdSeconds {
-                shortWindow = nil
-                weeklyWindow = onlyWindow
-            } else {
-                shortWindow = onlyWindow
-                weeklyWindow = nil
-            }
-        } else {
-            shortWindow = nil
-            weeklyWindow = nil
-        }
-
-        let primaryDisplayWindow = shortWindow ?? weeklyWindow
-
-        self.usedPercent = primaryDisplayWindow?.usedPercent ?? 0
-        self.resetAt = primaryDisplayWindow?.resetAt
-        self.primaryWindowSeconds = primaryDisplayWindow?.limitWindowSeconds
-        self.weeklyUsedPercent = weeklyWindow?.usedPercent
-        self.weeklyResetAt = weeklyWindow?.resetAt
-        self.weeklyWindowSeconds = weeklyWindow?.limitWindowSeconds
+        self.primaryWindow = prim
+        self.secondaryWindow = sec
+        self.additionalWindows = []
+        self.allowed = allowed
+        self.limitReached = limitReached
+        self.rateLimitReachedType = rateLimitReachedType
         self.creditsBalance = response.credits?.balance
         self.hasCredits = response.credits?.hasCredits ?? false
         self.isUnlimited = response.credits?.unlimited ?? false
         self.lastUpdated = Date()
         self.error = nil
 
-        // Track activity: if used% changed from previous, mark now as last activity
-        if let prev = previous, prev.usedPercent != self.usedPercent {
+        if let prev = previous, let currentPrimary = self.primaryWindow, let prevPrimary = prev.primaryWindow {
+            if currentPrimary.usedPercent != prevPrimary.usedPercent {
+                self.lastActivityAt = Date()
+            } else {
+                self.lastActivityAt = prev.lastActivityAt
+            }
+        } else if let prev = previous, prev.usedPercent != self.usedPercent {
             self.lastActivityAt = Date()
         } else {
             self.lastActivityAt = previous?.lastActivityAt

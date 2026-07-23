@@ -216,13 +216,13 @@ struct AccountCardView: View {
                 Text("\(Int(clampedPercent(usage.remainingPercent)))%")
                     .font(.system(size: 13, weight: .bold, design: .monospaced))
                     .foregroundStyle(percentColor(for: usage.remainingPercent))
-                if let primaryWindowLabel = windowLabel(for: usage.primaryWindowSeconds) {
+                if let primaryWindowLabel = windowLabel(for: usage.primaryWindow) {
                     Text(primaryWindowLabel)
                         .font(.system(size: 7.5, weight: .semibold))
                         .foregroundStyle(Color.white.opacity(0.62))
                 }
             }
-            .frame(width: windowLabel(for: usage.primaryWindowSeconds) == nil ? 40 : 54, alignment: .trailing)
+            .frame(width: windowLabel(for: usage.primaryWindow) == nil ? 40 : 54, alignment: .trailing)
         }
         .padding(.top, 6)
 
@@ -250,13 +250,31 @@ struct AccountCardView: View {
                 if case .refreshing = status {
                     ProgressView().controlSize(.mini).padding(.leading, 3)
                 } else {
-                    Text("  \(usage.lastUpdated.relativeDescription)")
-                        .font(.system(size: 8.5))
-                        .foregroundStyle(Color.white.opacity(0.60))
+                    HStack(spacing: 3) {
+                        Circle()
+                            .fill(Color.green)
+                            .frame(width: 5, height: 5)
+                        Text("Live • \(usage.lastUpdated.relativeDescription)")
+                            .font(.system(size: 8.5))
+                            .foregroundStyle(Color.white.opacity(0.60))
+                    }
+                    .padding(.leading, 3)
                 }
             }
         }
         .padding(.top, 4)
+
+        if usage.isLimitReached {
+            HStack(spacing: 4) {
+                Image(systemName: "exclamationmark.octagon.fill")
+                    .font(.system(size: 9))
+                    .foregroundStyle(.red)
+                Text("Limit reached")
+                    .font(.system(size: 9.5, weight: .semibold))
+                    .foregroundStyle(.red)
+            }
+            .padding(.top, 4)
+        }
 
         if let weeklyRemaining = usage.weeklyRemainingPercent, !usage.isWeeklyPrimary {
             weeklyUsageRow(weeklyRemaining: weeklyRemaining, weeklyResetAt: usage.weeklyResetAt)
@@ -279,8 +297,8 @@ struct AccountCardView: View {
 
     @ViewBuilder
     private func weeklyUsageRow(weeklyRemaining: Double, weeklyResetAt: Date?) -> some View {
-        let windowLabel = windowLabel(for: usage?.weeklyWindowSeconds)
-        let windowPrefix = windowLabel.map { "\($0) " } ?? ""
+        let label = usage?.weeklyWindow?.displayLabel ?? "Weekly"
+        let windowPrefix = "\(label) "
         switch usageDetailMode {
         case .compact:
             HStack(spacing: 4) {
@@ -297,7 +315,7 @@ struct AccountCardView: View {
         case .detailed:
             VStack(alignment: .leading, spacing: 4) {
                 HStack(spacing: 6) {
-                    Text(windowLabel ?? "Weekly")
+                    Text(label)
                         .font(.system(size: 8.5, weight: .bold))
                         .textCase(.uppercase)
                         .foregroundStyle(Color.white.opacity(0.60))
@@ -519,41 +537,36 @@ struct AccountCardView: View {
 
     private func resetSummary(for usage: AccountUsage, resetAt: Date) -> String {
         if usage.isWeeklyPrimary, usage.weeklyResetIsOverdue(grace: 60) {
-            return awaitingActivationLabel(for: usage.primaryWindowSeconds ?? usage.weeklyWindowSeconds)
+            return awaitingActivationLabel(for: usage.primaryWindow ?? usage.weeklyWindow)
         }
-        return "\(resetPrefix(for: usage.primaryWindowSeconds ?? usage.weeklyWindowSeconds)) \(resetAt.resetDescription)"
+        return "\(resetPrefix(for: usage.primaryWindow)) \(resetAt.resetDescription)"
     }
 
     private func weeklyResetDescription(for resetAt: Date) -> String {
         if let usage, usage.weeklyResetIsOverdue(grace: 60) {
-            return awaitingActivationLabel(for: usage.weeklyWindowSeconds)
+            return awaitingActivationLabel(for: usage.weeklyWindow)
         }
         return "resets \(resetAt.resetDescription)"
     }
 
+    private func windowLabel(for window: UsageWindow?) -> String? {
+        guard let window else { return nil }
+        return window.displayLabel
+    }
+
     private func windowLabel(for windowSeconds: Int?) -> String? {
         guard let windowSeconds, windowSeconds > 0 else { return nil }
-        if windowSeconds >= AccountUsage.monthlyWindowThresholdSeconds {
-            return "Monthly"
-        }
-        if windowSeconds >= AccountUsage.weeklyWindowThresholdSeconds {
-            return "Weekly"
-        }
-        return nil
+        return UsageWindowKind.classify(seconds: windowSeconds).displayLabel
     }
 
-    private func resetPrefix(for windowSeconds: Int?) -> String {
-        if let label = windowLabel(for: windowSeconds) {
-            return "\(label) resets"
-        }
-        return "Resets"
+    private func resetPrefix(for window: UsageWindow?) -> String {
+        guard let window else { return "Resets" }
+        return "\(window.displayLabel) resets"
     }
 
-    private func awaitingActivationLabel(for windowSeconds: Int?) -> String {
-        if let label = windowLabel(for: windowSeconds) {
-            return "\(label) awaiting activation"
-        }
-        return "Awaiting activation"
+    private func awaitingActivationLabel(for window: UsageWindow?) -> String {
+        guard let window else { return "Awaiting activation" }
+        return "\(window.displayLabel) awaiting activation"
     }
 
     private var stateIconName: String {
