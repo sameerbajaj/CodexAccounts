@@ -2,8 +2,6 @@
 //  AccountCardView.swift
 //  CodexAccounts
 //
-//  Created by Sameer Bajaj on 2/21/26.
-//
 
 import SwiftUI
 
@@ -12,6 +10,7 @@ struct AccountCardView: View {
     let usage: AccountUsage?
     let usageDetailMode: AccountsViewModel.UsageDetailMode
     let status: AccountStatus
+    let theme: ThemeColors
     let onRefresh: () -> Void
     let onRemove: () -> Void
     let onReauth: () -> Void
@@ -31,61 +30,38 @@ struct AccountCardView: View {
         return true
     }
 
+    private var statusAccentColor: Color {
+        if let usage {
+            return theme.statusColor(remainingPercent: usage.remainingPercent, isLimitReached: usage.isLimitReached)
+        }
+        return theme.accentPrimary
+    }
+
     var body: some View {
-        HStack(spacing: 0) {
-            // Left accent bar
-            Rectangle()
-                .fill(accentColor)
-                .frame(width: 3)
-                .clipShape(
-                    UnevenRoundedRectangle(
-                        topLeadingRadius: 8,
-                        bottomLeadingRadius: 8,
-                        bottomTrailingRadius: 0,
-                        topTrailingRadius: 0
-                    )
-                )
+        VStack(alignment: .leading, spacing: AppSpacing.sm) {
+            headerRow
 
-            VStack(alignment: .leading, spacing: 0) {
-                headerRow
-                    .padding(.top, 9)
-                    .padding(.horizontal, 10)
+            if showStateRow {
+                stateRow
+            }
 
-                if showStateRow {
-                    stateRow
-                        .padding(.horizontal, 10)
-                        .padding(.top, 6)
+            if let usage {
+                TimelineView(.periodic(from: Date(), by: 30)) { _ in
+                    usageRows(usage)
                 }
+            } else {
+                loadingRow
+            }
 
-                if let usage {
-                    TimelineView(.periodic(from: Date(), by: 30)) { _ in
-                        usageRows(usage)
-                    }
-                        .padding(.horizontal, 10)
-                        .padding(.bottom, isTestingMessage || testResult != nil ? 0 : 9)
-                } else {
-                    loadingRow
-                        .padding(.horizontal, 10)
-                        .padding(.bottom, isTestingMessage || testResult != nil ? 0 : 9)
-                }
-
-                if isTestingMessage {
-                    testMessageLoadingRow
-                        .padding(.horizontal, 10)
-                        .padding(.bottom, 9)
-                } else if let result = testResult {
-                    testResultRow(result)
-                        .padding(.horizontal, 10)
-                        .padding(.bottom, 9)
-                }
+            if isTestingMessage {
+                testMessageLoadingRow
+            } else if let result = testResult {
+                testResultRow(result)
             }
         }
-        .background(cardBackground)
-        .clipShape(RoundedRectangle(cornerRadius: 8))
-        .overlay(
-            RoundedRectangle(cornerRadius: 8)
-                .strokeBorder(borderColor, lineWidth: 0.5)
-        )
+        .padding(AppSpacing.md)
+        .themedCard(theme: theme, isHovered: isHovering, accentColor: account.isPinned ? theme.pinnedAccent : statusAccentColor)
+        .onHover { isHovering = $0 }
         .contextMenu {
             Button(action: onTogglePin) {
                 Label(account.isPinned ? "Unpin" : "Pin to top",
@@ -98,569 +74,367 @@ struct AccountCardView: View {
             Button(action: onRefresh) {
                 Label("Refresh", systemImage: "arrow.clockwise")
             }
-            weeklyAutoKickMenu
-            Button(action: onReauth) {
-                Label("Re-authenticate", systemImage: "key")
+            Menu("Weekly Auto-Kick") {
+                Button(action: { onSetWeeklyAutoKickOverride(.inherit) }) {
+                    HStack {
+                        Text("Use Global Setting")
+                        if weeklyAutoKickOverride == .inherit { Image(systemName: "checkmark") }
+                    }
+                }
+                Button(action: { onSetWeeklyAutoKickOverride(.forceOn) }) {
+                    HStack {
+                        Text("Always Enable for This Account")
+                        if weeklyAutoKickOverride == .forceOn { Image(systemName: "checkmark") }
+                    }
+                }
+                Button(action: { onSetWeeklyAutoKickOverride(.forceOff) }) {
+                    HStack {
+                        Text("Always Disable for This Account")
+                        if weeklyAutoKickOverride == .forceOff { Image(systemName: "checkmark") }
+                    }
+                }
             }
             Divider()
+            Button(action: onReauth) {
+                Label("Re-authenticate…", systemImage: "arrow.triangle.2.circlepath")
+            }
             Button(role: .destructive, action: onRemove) {
                 Label("Remove Account", systemImage: "trash")
             }
         }
-        .onHover { isHovering = $0 }
-        .animation(.easeInOut(duration: 0.15), value: isHovering)
     }
 
     // MARK: - Header Row
 
     private var headerRow: some View {
-        HStack(spacing: 6) {
+        HStack(spacing: AppSpacing.sm) {
             Text(account.email)
-                .font(.system(size: 12, weight: .semibold))
-                .foregroundStyle(Color.white.opacity(0.95))
+                .font(AppTypography.headline)
+                .foregroundStyle(theme.textPrimary)
                 .lineLimit(1)
                 .truncationMode(.middle)
 
-            Spacer(minLength: 4)
-
             if account.isPinned {
                 Image(systemName: "pin.fill")
-                    .font(.system(size: 7.5))
-                    .foregroundStyle(Color.orange.opacity(0.9))
+                    .font(.system(size: 9))
+                    .foregroundStyle(theme.pinnedAccent)
+                    .rotationEffect(.degrees(45))
+                    .help("Pinned account")
             }
 
-            PlanBadge(plan: account.planType)
-
-            authIndicator
-
-            if let weeklyAutoKickIndicator {
-                statusIcon(
-                    systemName: weeklyAutoKickIndicator.symbol,
-                    color: weeklyAutoKickIndicator.color,
-                    help: weeklyAutoKickIndicator.help
-                )
+            if let indicator = weeklyAutoKickIndicator {
+                Image(systemName: indicator.symbol)
+                    .font(.system(size: 9, weight: .bold))
+                    .foregroundStyle(indicator.color)
+                    .help(indicator.help)
             }
 
-            contextMenu
-                .opacity(isHovering ? 1 : 0)
-        }
-    }
+            Spacer()
 
-    private var contextMenu: some View {
-        Menu {
-            Button(action: onTogglePin) {
-                Label(account.isPinned ? "Unpin" : "Pin to top",
-                      systemImage: account.isPinned ? "pin.slash" : "pin")
-            }
-            Button(action: onTestMessage) {
-                Label("Send test message", systemImage: "paperplane")
-            }
-            .disabled(isTestingMessage)
-            Button(action: onRefresh) {
-                Label("Refresh", systemImage: "arrow.clockwise")
-            }
-            weeklyAutoKickMenu
-            Button(action: onReauth) {
-                Label("Re-authenticate", systemImage: "key")
-            }
-            Divider()
-            Button(role: .destructive, action: onRemove) {
-                Label("Remove Account", systemImage: "trash")
-            }
-        } label: {
-            ZStack {
-                RoundedRectangle(cornerRadius: 5)
-                    .fill(Color.white.opacity(isHovering ? 0.10 : 0))
+            planBadge
+
+            Button(action: {}) {
                 Image(systemName: "ellipsis")
-                    .font(.system(size: 9.5, weight: .semibold))
-                    .foregroundStyle(Color.white.opacity(0.75))
+                    .font(.system(size: 12))
+                    .foregroundStyle(theme.textTertiary)
             }
-            .frame(width: 22, height: 18)
+            .buttonStyle(.plain)
+            .opacity(isHovering ? 1 : 0)
+            .animation(.easeInOut(duration: AppAnimation.quick), value: isHovering)
         }
-        .menuStyle(.borderlessButton)
-        .menuIndicator(.hidden)
-        .fixedSize()
     }
 
-    private var authIndicator: some View {
-        statusIcon(systemName: authIconName, color: authBadgeColor, help: authHelpText)
+    // MARK: - Plan Badge
+
+    private var planBadge: some View {
+        Text(account.planType.uppercased())
+            .font(AppTypography.micro)
+            .fontWeight(.heavy)
+            .foregroundStyle(.white)
+            .padding(.horizontal, 6)
+            .padding(.vertical, 2)
+            .background(
+                Capsule().fill(theme.planBadgeGradient(for: account.planType))
+            )
     }
 
-    private func statusIcon(systemName: String, color: Color, help: String) -> some View {
-        Image(systemName: systemName)
-            .font(.system(size: 10, weight: .semibold))
-            .foregroundStyle(color.opacity(0.95))
-            .help(help)
+    // MARK: - State Row
+
+    private var stateRow: some View {
+        HStack(spacing: 6) {
+            Image(systemName: statusIcon)
+                .font(.system(size: 11))
+                .foregroundStyle(statusColor)
+
+            Text(statusMessage)
+                .font(AppTypography.caption)
+                .foregroundStyle(statusColor)
+                .lineLimit(1)
+
+            Spacer()
+
+            if showReauthButton {
+                Button("Reauth", action: onReauth)
+                    .buttonStyle(GlassButtonStyle(color: theme.warningOrange, isCompact: true))
+            }
+        }
+        .padding(.horizontal, AppSpacing.sm)
+        .padding(.vertical, AppSpacing.xs)
+        .background(
+            RoundedRectangle(cornerRadius: AppCornerRadius.sm)
+                .fill(statusColor.opacity(0.10))
+        )
+    }
+
+    private var statusIcon: String {
+        switch status {
+        case .refreshing: return "arrow.clockwise"
+        case .stale: return "clock.badge.exclamationmark"
+        case .degraded: return "exclamationmark.triangle"
+        case .needsReauth: return "lock.badge.exclamationmark"
+        case .error: return "exclamationmark.circle"
+        case .active: return "checkmark.circle"
+        }
+    }
+
+    private var statusColor: Color {
+        switch status {
+        case .refreshing: return theme.accentPrimary
+        case .stale: return theme.warningOrange
+        case .degraded: return theme.warningOrange
+        case .needsReauth: return theme.warningOrange
+        case .error: return theme.dangerRed
+        case .active: return theme.successGreen
+        }
+    }
+
+    private var statusMessage: String {
+        switch status {
+        case .refreshing: return "Refreshing usage data…"
+        case .stale: return "Session data stale"
+        case .degraded: return "Token refresh warning"
+        case .needsReauth: return "Re-authentication required"
+        case .error(let msg): return msg
+        case .active: return "Healthy"
+        }
+    }
+
+    private var showReauthButton: Bool {
+        if case .needsReauth = status { return true }
+        if case .degraded = status { return true }
+        return account.authState == .needsReauth
     }
 
     // MARK: - Usage Rows
 
     @ViewBuilder
     private func usageRows(_ usage: AccountUsage) -> some View {
-        // Usage bar + big % — no redundant label
-        HStack(spacing: 8) {
-            GeometryReader { proxy in
+        VStack(alignment: .leading, spacing: AppSpacing.xs) {
+            // Primary progress meter
+            primaryMeterView(usage)
+
+            // Details row (UUID, live pulse, activity)
+            detailsSubRow(usage)
+
+            // Optional secondary weekly meter
+            if usageDetailMode == .detailed, let weekly = usage.secondaryWindow {
+                secondaryMeterView(weekly)
+            }
+        }
+    }
+
+    private func primaryMeterView(_ usage: AccountUsage) -> some View {
+        let remaining = usage.remainingPercent
+        let statusColor = theme.statusColor(remainingPercent: remaining, isLimitReached: usage.isLimitReached)
+        let gradient = statusGradient(for: remaining, isLimitReached: usage.isLimitReached)
+
+        return VStack(alignment: .leading, spacing: AppSpacing.xs) {
+            GeometryReader { geo in
                 ZStack(alignment: .leading) {
-                    RoundedRectangle(cornerRadius: 4.5)
-                        .fill(Color.white.opacity(0.10))
-                    RoundedRectangle(cornerRadius: 4.5)
-                        .fill(barGradient(for: usage.remainingPercent))
-                        .frame(width: max(0, proxy.size.width * CGFloat(clampedPercent(usage.remainingPercent) / 100)))
-                        .shadow(color: barGlowColor(for: usage.remainingPercent), radius: 4, y: 0)
-                        .animation(.spring(duration: 0.5), value: usage.remainingPercent)
+                    Capsule()
+                        .fill(theme.progressTrack)
+
+                    Capsule()
+                        .fill(gradient)
+                        .frame(width: max(0, geo.size.width * (remaining / 100.0)))
+                        .shadow(color: statusColor.opacity(0.35), radius: 4, y: 1)
+                        .animation(.spring(duration: 0.5), value: remaining)
                 }
             }
-            .frame(height: 8)
+            .frame(height: 6)
+            .clipShape(Capsule())
 
-            VStack(alignment: .trailing, spacing: 1) {
-                Text("\(Int(clampedPercent(usage.remainingPercent)))%")
-                    .font(.system(size: 13, weight: .bold, design: .monospaced))
-                    .foregroundStyle(percentColor(for: usage.remainingPercent))
-                if let primaryWindowLabel = windowLabel(for: usage.primaryWindow) {
-                    Text(primaryWindowLabel)
-                        .font(.system(size: 7.5, weight: .semibold))
-                        .foregroundStyle(Color.white.opacity(0.62))
-                }
-            }
-            .frame(width: windowLabel(for: usage.primaryWindow) == nil ? 40 : 54, alignment: .trailing)
-        }
-        .padding(.top, 6)
+            HStack {
+                Text(String(format: "%.0f%%", remaining))
+                    .font(AppTypography.statMedium)
+                    .foregroundStyle(statusColor)
+                    .contentTransition(.numericText())
 
-        // Reset + meta row
-        HStack(spacing: 0) {
-            if let resetAt = usage.resetAt {
-                HStack(spacing: 3) {
-                    Image(systemName: "arrow.clockwise")
-                        .font(.system(size: 7.5))
-                    Text(resetSummary(for: usage, resetAt: resetAt))
-                        .font(.system(size: 9.5))
-                }
-                .foregroundStyle(Color.white.opacity(0.75))
-            }
+                Text("remaining")
+                    .font(AppTypography.caption)
+                    .foregroundStyle(theme.textTertiary)
 
-            Spacer()
-
-            Group {
-                if let shortId = account.shortAccountId {
-                    Text(shortId)
-                        .font(.system(size: 8.5, design: .monospaced))
-                        .foregroundStyle(Color.white.opacity(0.60))
-                        .help(account.accountId ?? "")
-                }
-                if case .refreshing = status {
-                    ProgressView().controlSize(.mini).padding(.leading, 3)
-                } else {
-                    HStack(spacing: 3) {
-                        Circle()
-                            .fill(Color.green)
-                            .frame(width: 5, height: 5)
-                        Text("Live • \(usage.lastUpdated.relativeDescription)")
-                            .font(.system(size: 8.5))
-                            .foregroundStyle(Color.white.opacity(0.60))
-                    }
-                    .padding(.leading, 3)
-                }
-            }
-        }
-        .padding(.top, 4)
-
-        if usage.isLimitReached {
-            HStack(spacing: 4) {
-                Image(systemName: "exclamationmark.octagon.fill")
-                    .font(.system(size: 9))
-                    .foregroundStyle(.red)
-                Text("Limit reached")
-                    .font(.system(size: 9.5, weight: .semibold))
-                    .foregroundStyle(.red)
-            }
-            .padding(.top, 4)
-        }
-
-        if let weeklyRemaining = usage.weeklyRemainingPercent, !usage.isWeeklyPrimary {
-            weeklyUsageRow(weeklyRemaining: weeklyRemaining, weeklyResetAt: usage.weeklyResetAt)
-                .padding(.top, 5)
-        }
-
-        if let error = usage.error {
-            HStack(spacing: 4) {
-                Image(systemName: "exclamationmark.triangle.fill")
-                    .font(.system(size: 9))
-                    .foregroundStyle(.orange)
-                Text(error)
-                    .font(.system(size: 9))
-                    .foregroundStyle(.orange)
-                    .lineLimit(2)
-            }
-            .padding(.top, 4)
-        }
-    }
-
-    @ViewBuilder
-    private func weeklyUsageRow(weeklyRemaining: Double, weeklyResetAt: Date?) -> some View {
-        let label = usage?.weeklyWindow?.displayLabel ?? "Weekly"
-        let windowPrefix = "\(label) "
-        switch usageDetailMode {
-        case .compact:
-            HStack(spacing: 4) {
-                Text("\(windowPrefix)\(Int(clampedPercent(weeklyRemaining)))% left")
-                    .font(.system(size: 9, weight: .medium))
-                    .foregroundStyle(Color.white.opacity(0.70))
-                if let weeklyResetAt {
-                    Text("| \(weeklyResetDescription(for: weeklyResetAt))")
-                        .font(.system(size: 9))
-                        .foregroundStyle(Color.white.opacity(0.58))
-                }
                 Spacer()
-            }
-        case .detailed:
-            VStack(alignment: .leading, spacing: 4) {
-                HStack(spacing: 6) {
-                    Text(label)
-                        .font(.system(size: 8.5, weight: .bold))
-                        .textCase(.uppercase)
-                        .foregroundStyle(Color.white.opacity(0.60))
-                    Spacer()
-                    Text("\(Int(clampedPercent(weeklyRemaining)))% left")
-                        .font(.system(size: 9.5, weight: .semibold))
-                        .foregroundStyle(Color.white.opacity(0.76))
-                }
 
-                GeometryReader { proxy in
-                    ZStack(alignment: .leading) {
-                        RoundedRectangle(cornerRadius: 3.5)
-                            .fill(Color.white.opacity(0.09))
-                        RoundedRectangle(cornerRadius: 3.5)
-                            .fill(Color.white.opacity(0.42))
-                            .frame(width: max(0, proxy.size.width * CGFloat(clampedPercent(weeklyRemaining) / 100)))
-                    }
-                }
-                .frame(height: 6)
-
-                if let weeklyResetAt {
-                    Text(weeklyResetDescription(for: weeklyResetAt))
-                        .font(.system(size: 9))
-                        .foregroundStyle(Color.white.opacity(0.58))
-                }
+                Text(resetCountdownText(usage))
+                    .font(AppTypography.caption)
+                    .foregroundStyle(theme.textSecondary)
             }
         }
     }
 
-    // MARK: - Reauth Row
+    private func secondaryMeterView(_ window: UsageWindow) -> some View {
+        let remaining = window.remainingPercent
+        let statusColor = theme.statusColor(remainingPercent: remaining, isLimitReached: false)
 
-    private var stateRow: some View {
+        return HStack(spacing: AppSpacing.sm) {
+            Text("Weekly")
+                .font(AppTypography.caption)
+                .foregroundStyle(theme.textTertiary)
+
+            GeometryReader { geo in
+                ZStack(alignment: .leading) {
+                    Capsule().fill(theme.progressTrack)
+                    Capsule()
+                        .fill(statusColor)
+                        .frame(width: max(0, geo.size.width * (remaining / 100.0)))
+                }
+            }
+            .frame(height: 4)
+
+            Text(String(format: "%.0f%%", remaining))
+                .font(AppTypography.statSmall)
+                .foregroundStyle(statusColor)
+        }
+        .padding(.top, 2)
+    }
+
+    private func detailsSubRow(_ usage: AccountUsage) -> some View {
         HStack(spacing: 6) {
-            Image(systemName: stateIconName)
-                .font(.system(size: 9))
-                .foregroundStyle(stateColor)
-            Text(stateText)
-                .font(.system(size: 10))
-                .foregroundStyle(Color.white.opacity(0.85))
-                .lineLimit(1)
+            if let shortID = account.shortAccountId {
+                Text(shortID)
+                    .font(AppTypography.mono)
+                    .foregroundStyle(theme.textTertiary)
+            }
+
             Spacer()
-            if case .needsReauth = status {
-                Button(action: onReauth) {
-                    Text("Reauth")
-                        .font(.system(size: 9.5, weight: .medium))
-                }
-                .buttonStyle(.borderedProminent)
-                .tint(.orange)
-                .controlSize(.mini)
+
+            PulsingDot(color: theme.successGreen)
+
+            if let lastActivity = usage.lastActivityAt {
+                Text(relativeTimeString(from: lastActivity))
+                    .font(AppTypography.caption)
+                    .foregroundStyle(theme.textTertiary)
             }
         }
     }
 
-    // MARK: - Loading Row
+    private func statusGradient(for remaining: Double, isLimitReached: Bool) -> LinearGradient {
+        if isLimitReached || remaining <= 15 {
+            return LinearGradient(
+                colors: [theme.dangerRed, theme.dangerRed.opacity(0.7)],
+                startPoint: .leading, endPoint: .trailing
+            )
+        } else if remaining <= 40 {
+            return LinearGradient(
+                colors: [theme.warningOrange, theme.warningOrange.opacity(0.7)],
+                startPoint: .leading, endPoint: .trailing
+            )
+        } else {
+            return LinearGradient(
+                colors: [theme.successGreen, theme.successGreen.opacity(0.7)],
+                startPoint: .leading, endPoint: .trailing
+            )
+        }
+    }
+
+    private func resetCountdownText(_ usage: AccountUsage) -> String {
+        guard let resetAt = usage.resetAt else { return "" }
+        let now = Date()
+        guard resetAt > now else { return "Resetting soon" }
+        let diff = Int(resetAt.timeIntervalSince(now))
+        let hours = diff / 3600
+        let minutes = (diff % 3600) / 60
+        if hours > 0 {
+            return "Resets in \(hours)h \(minutes)m"
+        } else {
+            return "Resets in \(minutes)m"
+        }
+    }
+
+    private func relativeTimeString(from date: Date) -> String {
+        let diff = Int(Date().timeIntervalSince(date))
+        if diff < 60 { return "Just now" }
+        let mins = diff / 60
+        if mins < 60 { return "\(mins)m ago" }
+        let hours = mins / 60
+        return "\(hours)h ago"
+    }
+
+    // MARK: - Loading & Test Message Rows
 
     private var loadingRow: some View {
-        HStack(spacing: 6) {
+        HStack(spacing: 8) {
             ProgressView().controlSize(.small)
-            Text("Loading...")
-                .font(.system(size: 10))
-                .foregroundStyle(Color.white.opacity(0.75))
+            Text("Loading usage data…")
+                .font(AppTypography.caption)
+                .foregroundStyle(theme.textTertiary)
         }
-        .padding(.top, 6)
+        .padding(.vertical, 4)
     }
-
-    // MARK: - Test Message Rows
 
     private var testMessageLoadingRow: some View {
-        HStack(spacing: 6) {
+        HStack(spacing: 8) {
             ProgressView().controlSize(.small)
-            Text("Sending test message…")
-                .font(.system(size: 9.5))
-                .foregroundStyle(Color.white.opacity(0.75))
+            Text("Sending test prompt…")
+                .font(AppTypography.caption)
+                .foregroundStyle(theme.accentPrimary)
         }
-        .padding(.top, 5)
-    }
-
-    private var weeklyAutoKickMenu: some View {
-        Menu("Weekly Auto-Kick") {
-            ForEach(WeeklyAutoKickOverride.allCases) { overrideValue in
-                Button(action: { onSetWeeklyAutoKickOverride(overrideValue) }) {
-                    Label(overrideValue.rawValue, systemImage: weeklyAutoKickOverride == overrideValue ? "checkmark" : overrideValue.icon)
-                }
-            }
-        }
+        .padding(.vertical, 4)
     }
 
     private func testResultRow(_ result: TestMessageResult) -> some View {
-        HStack(alignment: .top, spacing: 5) {
+        HStack(spacing: 6) {
             Image(systemName: result.success ? "checkmark.circle.fill" : "xmark.circle.fill")
-                .font(.system(size: 10))
-                .foregroundStyle(result.success ? .green : .red)
-                .padding(.top, 1)
+                .font(.system(size: 11))
+                .foregroundStyle(result.success ? theme.successGreen : theme.dangerRed)
+
             Text(result.message)
-                .font(.system(size: 9, design: .monospaced))
-                .foregroundStyle(result.success ? Color.green.opacity(0.85) : Color.red.opacity(0.85))
-                .lineLimit(4)
-                .textSelection(.enabled)
-            Spacer(minLength: 4)
+                .font(AppTypography.caption)
+                .foregroundStyle(theme.textSecondary)
+                .lineLimit(2)
+
+            Spacer()
+
             Button(action: onDismissTestResult) {
                 Image(systemName: "xmark")
                     .font(.system(size: 8, weight: .bold))
-                    .foregroundStyle(Color.white.opacity(0.50))
+                    .foregroundStyle(theme.textTertiary)
             }
             .buttonStyle(.plain)
         }
-        .padding(5)
+        .padding(.horizontal, AppSpacing.sm)
+        .padding(.vertical, AppSpacing.xs)
         .background(
-            RoundedRectangle(cornerRadius: 6)
-                .fill((result.success ? Color.green : Color.red).opacity(0.10))
+            RoundedRectangle(cornerRadius: AppCornerRadius.sm)
+                .fill((result.success ? theme.successGreen : theme.dangerRed).opacity(0.10))
         )
-        .padding(.top, 5)
-    }
-
-    // MARK: - Colors
-
-    private var accentColor: Color {
-        switch status {
-        case .active:
-            guard let usage else { return .green }
-            let r = usage.remainingPercent
-            if r > 40 { return .green }
-            else if r > 15 { return .orange }
-            else { return .red }
-        case .refreshing: return Color(red: 0.3, green: 0.55, blue: 1.0)
-        case .stale: return .yellow
-        case .degraded: return .orange
-        case .needsReauth: return .orange
-        case .error: return .red
-        }
-    }
-
-    private var authBadgeColor: Color {
-        switch account.authState {
-        case .healthy: return .green
-        case .stale: return .yellow
-        case .degraded: return .orange
-        case .needsReauth: return .red
-        }
-    }
-
-    private var authIconName: String {
-        switch account.authState {
-        case .healthy: return "checkmark.circle.fill"
-        case .stale: return "clock.badge.exclamationmark"
-        case .degraded: return "exclamationmark.circle.fill"
-        case .needsReauth: return "xmark.circle.fill"
-        }
-    }
-
-    private var authHelpText: String {
-        switch account.authState {
-        case .healthy:
-            if let date = account.lastAuthValidationAt {
-                return "Auth OK \(date.relativeDescription)"
-            }
-            return "Auth OK"
-        case .stale:
-            if let date = account.lastAuthValidationAt {
-                return "Auth stale since \(date.relativeDescription)"
-            }
-            return "Auth stale"
-        case .degraded:
-            if let date = account.lastRefreshFailureAt {
-                return "Refresh failing \(date.relativeDescription)"
-            }
-            return "Refresh failing"
-        case .needsReauth:
-            return "Session expired"
-        }
-    }
-
-    private var cardBackground: some View {
-        Group {
-            if account.isPinned {
-                Color.orange.opacity(isHovering ? 0.20 : 0.12)
-            } else {
-                Color.white.opacity(isHovering ? 0.12 : 0.07)
-            }
-        }
-    }
-
-    private var borderColor: Color {
-        if account.isPinned { return Color.orange.opacity(isHovering ? 0.40 : 0.25) }
-        return Color.white.opacity(isHovering ? 0.25 : 0.15)
-    }
-
-    private func barGradient(for remaining: Double) -> LinearGradient {
-        if remaining > 40 {
-            return LinearGradient(
-                colors: [Color(red: 0.18, green: 0.82, blue: 0.52), Color(red: 0.10, green: 0.72, blue: 0.40)],
-                startPoint: .leading, endPoint: .trailing)
-        } else if remaining > 15 {
-            return LinearGradient(
-                colors: [Color(red: 1.0, green: 0.72, blue: 0.18), Color(red: 1.0, green: 0.55, blue: 0.10)],
-                startPoint: .leading, endPoint: .trailing)
-        } else {
-            return LinearGradient(
-                colors: [Color(red: 1.0, green: 0.35, blue: 0.30), Color(red: 0.90, green: 0.22, blue: 0.20)],
-                startPoint: .leading, endPoint: .trailing)
-        }
-    }
-
-    private func barGlowColor(for remaining: Double) -> Color {
-        if remaining > 40 { return Color(red: 0.18, green: 0.82, blue: 0.52).opacity(0.35) }
-        else if remaining > 15 { return Color(red: 1.0, green: 0.65, blue: 0.15).opacity(0.30) }
-        else { return Color(red: 1.0, green: 0.30, blue: 0.25).opacity(0.30) }
-    }
-
-    private func percentColor(for remaining: Double) -> Color {
-        if remaining > 40 { return Color(red: 0.30, green: 0.90, blue: 0.55) }
-        else if remaining > 15 { return Color(red: 1.0, green: 0.72, blue: 0.20) }
-        else { return Color(red: 1.0, green: 0.40, blue: 0.40) }
-    }
-
-    private func clampedPercent(_ value: Double) -> Double {
-        min(100, max(0, value))
-    }
-
-    private func resetSummary(for usage: AccountUsage, resetAt: Date) -> String {
-        if usage.isWeeklyPrimary, usage.weeklyResetIsOverdue(grace: 60) {
-            return awaitingActivationLabel(for: usage.primaryWindow ?? usage.weeklyWindow)
-        }
-        return "\(resetPrefix(for: usage.primaryWindow)) \(resetAt.resetDescription)"
-    }
-
-    private func weeklyResetDescription(for resetAt: Date) -> String {
-        if let usage, usage.weeklyResetIsOverdue(grace: 60) {
-            return awaitingActivationLabel(for: usage.weeklyWindow)
-        }
-        return "resets \(resetAt.resetDescription)"
-    }
-
-    private func windowLabel(for window: UsageWindow?) -> String? {
-        guard let window else { return nil }
-        return window.displayLabel
-    }
-
-    private func windowLabel(for windowSeconds: Int?) -> String? {
-        guard let windowSeconds, windowSeconds > 0 else { return nil }
-        return UsageWindowKind.classify(seconds: windowSeconds).displayLabel
-    }
-
-    private func resetPrefix(for window: UsageWindow?) -> String {
-        guard let window else { return "Resets" }
-        return "\(window.displayLabel) resets"
-    }
-
-    private func awaitingActivationLabel(for window: UsageWindow?) -> String {
-        guard let window else { return "Awaiting activation" }
-        return "\(window.displayLabel) awaiting activation"
-    }
-
-    private var stateIconName: String {
-        switch status {
-        case .active: return "checkmark.circle.fill"
-        case .refreshing: return "arrow.triangle.2.circlepath.circle.fill"
-        case .stale: return "clock.badge.exclamationmark"
-        case .degraded: return "exclamationmark.circle.fill"
-        case .needsReauth: return "exclamationmark.triangle.fill"
-        case .error: return "xmark.octagon.fill"
-        }
-    }
-
-    private var stateColor: Color {
-        switch status {
-        case .active: return .green
-        case .refreshing: return Color(red: 0.3, green: 0.55, blue: 1.0)
-        case .stale: return .yellow
-        case .degraded: return .orange
-        case .needsReauth: return .orange
-        case .error: return .red
-        }
-    }
-
-    private var stateText: String {
-        switch status {
-        case .active:
-            if let date = account.lastAuthValidationAt {
-                return "Auth OK \(date.relativeDescription)"
-            }
-            return "Auth OK"
-        case .refreshing:
-            return "Refreshing session"
-        case .stale:
-            if let date = account.lastAuthValidationAt {
-                return "Auth stale since \(date.relativeDescription)"
-            }
-            return "Auth stale"
-        case .degraded:
-            if let date = account.lastRefreshFailureAt {
-                return "Refresh failing \(date.relativeDescription)"
-            }
-            return "Refresh failing"
-        case .needsReauth:
-            return "Session expired"
-        case let .error(message):
-            return message
-        }
     }
 }
 
-// MARK: - Plan Badge
+// MARK: - PulsingDot
 
-struct PlanBadge: View {
-    let plan: String
+private struct PulsingDot: View {
+    let color: Color
+    @State private var isAnimating = false
 
     var body: some View {
-        Text(displayName)
-            .font(.system(size: 8.5, weight: .heavy, design: .rounded))
-            .foregroundStyle(.white)
-            .padding(.horizontal, 7)
-            .padding(.vertical, 2.5)
-            .background(Capsule().fill(badgeGradient))
-    }
-
-    private var displayName: String {
-        switch plan.lowercased() {
-        case "pro": return "PRO"
-        case "plus": return "PLUS"
-        case "go": return "GO"
-        case "free": return "FREE"
-        case "team": return "TEAM"
-        case "enterprise": return "ENT"
-        case "edu", "education": return "EDU"
-        default: return plan.uppercased()
-        }
-    }
-
-    private var badgeGradient: LinearGradient {
-        switch plan.lowercased() {
-        case "pro":
-            return LinearGradient(colors: [Color(red: 0.65, green: 0.35, blue: 1.0), Color(red: 0.50, green: 0.25, blue: 0.92)], startPoint: .leading, endPoint: .trailing)
-        case "plus":
-            return LinearGradient(colors: [Color(red: 0.30, green: 0.55, blue: 1.0), Color(red: 0.15, green: 0.70, blue: 0.98)], startPoint: .leading, endPoint: .trailing)
-        case "go":
-            return LinearGradient(colors: [Color(red: 0.10, green: 0.72, blue: 0.58), Color(red: 0.05, green: 0.82, blue: 0.50)], startPoint: .leading, endPoint: .trailing)
-        case "team":
-            return LinearGradient(colors: [Color(red: 1.0, green: 0.60, blue: 0.15), Color(red: 1.0, green: 0.75, blue: 0.15)], startPoint: .leading, endPoint: .trailing)
-        case "enterprise":
-            return LinearGradient(colors: [Color(red: 1.0, green: 0.75, blue: 0.15), Color(red: 1.0, green: 0.60, blue: 0.15)], startPoint: .leading, endPoint: .trailing)
-        case "free":
-            return LinearGradient(colors: [Color(red: 0.45, green: 0.48, blue: 0.55), Color(red: 0.35, green: 0.38, blue: 0.45)], startPoint: .leading, endPoint: .trailing)
-        default:
-            return LinearGradient(colors: [Color(white: 0.45), Color(white: 0.38)], startPoint: .leading, endPoint: .trailing)
-        }
+        Circle()
+            .fill(color)
+            .frame(width: 4, height: 4)
+            .scaleEffect(isAnimating ? 1.4 : 1.0)
+            .opacity(isAnimating ? 0.4 : 1.0)
+            .animation(.easeInOut(duration: 1.5).repeatForever(autoreverses: true), value: isAnimating)
+            .onAppear { isAnimating = true }
     }
 }

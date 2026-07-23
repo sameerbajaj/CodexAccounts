@@ -2,12 +2,11 @@
 //  AddAccountView.swift
 //  CodexAccounts
 //
-//  Created by Sameer Bajaj on 2/21/26.
-//
 
 import SwiftUI
 
 struct AddAccountView: View {
+    let theme: ThemeColors
     let status: AccountsViewModel.AddAccountStatus
     let authCommand: String
     let prompt: String
@@ -15,22 +14,24 @@ struct AddAccountView: View {
     let onCancel: () -> Void
 
     var body: some View {
-        VStack(spacing: 16) {
+        VStack(spacing: AppSpacing.md) {
             // Icon
             ZStack {
                 Circle()
-                    .fill(.blue.opacity(0.12))
+                    .fill(statusIconColor.opacity(0.12))
                     .frame(width: 56, height: 56)
                 Image(systemName: statusIcon)
                     .font(.system(size: 24, weight: .medium))
                     .foregroundStyle(statusIconColor)
                     .symbolEffect(.pulse, isActive: status == .watching)
             }
-            .padding(.top, 8)
+            .padding(.top, AppSpacing.xs)
 
-            Text(statusTitle)
-                .font(.system(size: 14, weight: .semibold))
-                .foregroundStyle(.white)
+            if !statusTitle.isEmpty {
+                Text(statusTitle)
+                    .font(AppTypography.title)
+                    .foregroundStyle(theme.textPrimary)
+            }
 
             // Content based on status
             Group {
@@ -50,75 +51,65 @@ struct AddAccountView: View {
             if status != .detected("") {
                 Button("Cancel", action: onCancel)
                     .buttonStyle(.plain)
-                    .foregroundStyle(Color.white.opacity(0.75))
-                    .font(.system(size: 12))
-                    .padding(.bottom, 4)
+                    .foregroundStyle(theme.textTertiary)
+                    .font(AppTypography.body)
+                    .padding(.bottom, AppSpacing.xs)
             }
         }
-        .padding(.horizontal, 24)
-        .padding(.vertical, 16)
+        .padding(.horizontal, AppSpacing.xl)
+        .padding(.vertical, AppSpacing.md)
         .frame(maxWidth: .infinity)
     }
 
     // MARK: - Watching Content
 
     private var watchingContent: some View {
-        VStack(spacing: 12) {
+        VStack(spacing: AppSpacing.md) {
             Text(prompt)
-                .font(.system(size: 11))
-                .foregroundStyle(Color.white.opacity(0.82))
+                .font(AppTypography.body)
+                .foregroundStyle(theme.textSecondary)
                 .multilineTextAlignment(.center)
 
             Button(action: onStartLogin) {
                 Label("Open Codex Login", systemImage: "terminal")
-                    .font(.system(size: 12, weight: .semibold))
-                    .padding(.horizontal, 14)
-                    .padding(.vertical, 8)
                     .frame(maxWidth: .infinity)
-                    .background(
-                        RoundedRectangle(cornerRadius: 8)
-                            .fill(Color.blue.opacity(0.28))
-                    )
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 8)
-                            .strokeBorder(Color.blue.opacity(0.55), lineWidth: 0.5)
-                    )
             }
-            .buttonStyle(.plain)
+            .buttonStyle(GlassButtonStyle(color: theme.accentPrimary))
             .help("Opens Terminal and runs Codex login using this app's isolated auth folder.")
 
             DisclosureGroup {
-                VStack(spacing: 8) {
+                VStack(spacing: AppSpacing.sm) {
                     Text("If the button does not open Terminal, run this fallback command:")
-                        .font(.system(size: 10))
-                        .foregroundStyle(Color.white.opacity(0.58))
+                        .font(AppTypography.caption)
+                        .foregroundStyle(theme.textTertiary)
                         .multilineTextAlignment(.center)
 
                     CommandBlock(
                         command: authCommand,
+                        theme: theme,
                         description: "Sign in without logging out of your main Codex session"
                     )
                 }
                 .padding(.top, 6)
             } label: {
                 Text("Manual fallback")
-                    .font(.system(size: 10.5, weight: .medium))
-                    .foregroundStyle(Color.white.opacity(0.58))
+                    .font(AppTypography.captionMedium)
+                    .foregroundStyle(theme.textTertiary)
             }
-            .tint(Color.white.opacity(0.58))
+            .tint(theme.textTertiary)
 
             Text("This uses an isolated Codex login for this app, so your normal terminal Codex session is not changed.")
-                .font(.system(size: 9.5))
-                .foregroundStyle(Color.white.opacity(0.52))
+                .font(AppTypography.caption)
+                .foregroundStyle(theme.textTertiary)
                 .multilineTextAlignment(.center)
 
             if status == .watching {
                 HStack(spacing: 6) {
                     ProgressView()
                         .controlSize(.small)
-                    Text("Waiting for authentication...")
-                        .font(.system(size: 11))
-                        .foregroundStyle(Color.white.opacity(0.80))
+                    Text("Waiting for authentication…")
+                        .font(AppTypography.body)
+                        .foregroundStyle(theme.textSecondary)
                 }
                 .padding(.top, 4)
             }
@@ -131,21 +122,21 @@ struct AddAccountView: View {
         VStack(spacing: 10) {
             Image(systemName: "checkmark.circle.fill")
                 .font(.system(size: 32))
-                .foregroundStyle(.green)
+                .foregroundStyle(theme.successGreen)
                 .symbolEffect(.bounce, value: email)
 
             Text("Account Detected!")
-                .font(.system(size: 13, weight: .semibold))
-                .foregroundStyle(.green)
+                .font(AppTypography.title)
+                .foregroundStyle(theme.successGreen)
 
             Text(email)
-                .font(.system(size: 12, weight: .medium, design: .monospaced))
-                .foregroundStyle(Color.white.opacity(0.90))
-                .padding(.horizontal, 12)
-                .padding(.vertical, 4)
+                .font(AppTypography.mono)
+                .foregroundStyle(theme.textPrimary)
+                .padding(.horizontal, AppSpacing.md)
+                .padding(.vertical, AppSpacing.xs)
                 .background(
-                    RoundedRectangle(cornerRadius: 6)
-                        .fill(.fill.opacity(0.5))
+                    RoundedRectangle(cornerRadius: AppCornerRadius.sm)
+                        .fill(theme.cardFill)
                 )
         }
     }
@@ -153,13 +144,13 @@ struct AddAccountView: View {
     // MARK: - Error Content
 
     private func errorContent(message: String) -> some View {
-        VStack(spacing: 8) {
+        VStack(spacing: AppSpacing.sm) {
             Image(systemName: "exclamationmark.triangle.fill")
                 .font(.system(size: 28))
-                .foregroundStyle(.red)
+                .foregroundStyle(theme.dangerRed)
             Text(message)
-                .font(.system(size: 12))
-                .foregroundStyle(Color.white.opacity(0.80))
+                .font(AppTypography.body)
+                .foregroundStyle(theme.textSecondary)
                 .multilineTextAlignment(.center)
         }
     }
@@ -176,9 +167,9 @@ struct AddAccountView: View {
 
     private var statusIconColor: Color {
         switch status {
-        case .idle, .watching: return .blue
-        case .detected: return .green
-        case .error: return .red
+        case .idle, .watching: return theme.accentPrimary
+        case .detected: return theme.successGreen
+        case .error: return theme.dangerRed
         }
     }
 
@@ -195,6 +186,7 @@ struct AddAccountView: View {
 
 struct CommandBlock: View {
     let command: String
+    let theme: ThemeColors
     var description: String? = nil
 
     @State private var copied = false
@@ -203,27 +195,28 @@ struct CommandBlock: View {
         Button(action: copyCommand) {
             HStack(spacing: 8) {
                 Text("$")
-                    .foregroundStyle(.green.opacity(0.6))
+                    .font(AppTypography.mono)
+                    .foregroundStyle(theme.successGreen)
                 Text(command)
-                    .foregroundStyle(.white)
+                    .font(AppTypography.mono)
+                    .foregroundStyle(theme.textPrimary)
 
                 Spacer()
 
                 Image(systemName: copied ? "checkmark" : "doc.on.doc")
                     .font(.system(size: 9))
-                    .foregroundStyle(copied ? Color.green : Color.white.opacity(0.65))
+                    .foregroundStyle(copied ? theme.successGreen : theme.textTertiary)
                     .animation(.easeInOut, value: copied)
             }
-            .font(.system(size: 12, weight: .medium, design: .monospaced))
-            .padding(.horizontal, 12)
-            .padding(.vertical, 8)
+            .padding(.horizontal, AppSpacing.md)
+            .padding(.vertical, AppSpacing.sm)
             .background(
-                RoundedRectangle(cornerRadius: 8)
-                    .fill(Color.white.opacity(0.08))
+                RoundedRectangle(cornerRadius: AppCornerRadius.sm)
+                    .fill(theme.surfaceSecondary)
             )
             .overlay(
-                RoundedRectangle(cornerRadius: 8)
-                    .strokeBorder(.separator.opacity(0.4), lineWidth: 0.5)
+                RoundedRectangle(cornerRadius: AppCornerRadius.sm)
+                    .strokeBorder(theme.divider, lineWidth: 0.5)
             )
         }
         .buttonStyle(.plain)

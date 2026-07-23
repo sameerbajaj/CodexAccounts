@@ -2,35 +2,36 @@
 //  EmptyStateView.swift
 //  CodexAccounts
 //
-//  Created by Sameer Bajaj on 2/21/26.
-//
 
 import SwiftUI
 
 struct EmptyStateView: View {
+    let theme: ThemeColors
     let onAddAccount: () -> Void
 
     var body: some View {
-        VStack(spacing: 16) {
-            Spacer().frame(height: 8)
+        VStack(spacing: AppSpacing.lg) {
+            Spacer().frame(height: AppSpacing.sm)
 
-            // Icon
+            // Icon with subtle accent glow circle
             ZStack {
                 Circle()
-                    .fill(.blue.opacity(0.10))
-                    .frame(width: 64, height: 64)
+                    .fill(theme.accentPrimary.opacity(0.12))
+                    .frame(width: 68, height: 68)
                 Image(systemName: "person.crop.circle.badge.plus")
                     .font(.system(size: 30))
-                    .foregroundStyle(Color.white.opacity(0.50))
+                    .foregroundStyle(theme.accentPrimary)
+                    .symbolRenderingMode(.hierarchical)
             }
 
-            VStack(spacing: 6) {
+            VStack(spacing: AppSpacing.xs) {
                 Text("No Accounts Yet")
-                    .font(.system(size: 14, weight: .semibold))
+                    .font(AppTypography.title)
+                    .foregroundStyle(theme.textPrimary)
 
                 Text("Add your Codex accounts to\ntrack usage across all of them.")
-                    .font(.system(size: 12))
-                    .foregroundStyle(.secondary)
+                    .font(AppTypography.body)
+                    .foregroundStyle(theme.textSecondary)
                     .multilineTextAlignment(.center)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -40,27 +41,24 @@ struct EmptyStateView: View {
                     Image(systemName: "plus.circle.fill")
                         .font(.system(size: 13))
                     Text("Add First Account")
-                        .font(.system(size: 13, weight: .medium))
+                        .font(AppTypography.bodyMedium)
                 }
-                .padding(.horizontal, 16)
-                .padding(.vertical, 8)
             }
-            .buttonStyle(.borderedProminent)
-            .controlSize(.regular)
+            .buttonStyle(GlassButtonStyle(color: theme.accentPrimary))
 
             // Hint
             VStack(spacing: 4) {
                 Text("Make sure Codex CLI is installed:")
-                    .font(.system(size: 10))
-                    .foregroundStyle(.tertiary)
+                    .font(AppTypography.caption)
+                    .foregroundStyle(theme.textTertiary)
                 Text("npm i -g @openai/codex")
-                    .font(.system(size: 10, design: .monospaced))
-                    .foregroundStyle(.tertiary)
+                    .font(AppTypography.mono)
+                    .foregroundStyle(theme.textTertiary)
             }
 
-            Spacer().frame(height: 8)
+            Spacer().frame(height: AppSpacing.sm)
         }
-        .padding(.horizontal, 24)
-        .padding(.vertical, 8)
+        .padding(.horizontal, AppSpacing.xl)
+        .padding(.vertical, AppSpacing.md)
     }
 }

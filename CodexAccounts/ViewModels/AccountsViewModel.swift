@@ -63,6 +63,13 @@ final class AccountsViewModel {
             rebuildWeeklyAutoKickSchedule()
         }
     }
+    var selectedTheme: AppTheme = .midnight {
+        didSet { UserDefaults.standard.set(selectedTheme.rawValue, forKey: "selectedTheme") }
+    }
+
+    var themeColors: ThemeColors {
+        ThemeColors.colors(for: selectedTheme)
+    }
 
     // MARK: - Sort
 
@@ -230,6 +237,10 @@ final class AccountsViewModel {
         if let raw = UserDefaults.standard.string(forKey: "weeklyAutoKickMode"),
            let mode = WeeklyAutoKickMode(rawValue: raw) {
             weeklyAutoKickMode = mode
+        }
+        if let raw = UserDefaults.standard.string(forKey: "selectedTheme"),
+           let theme = AppTheme(rawValue: raw) {
+            selectedTheme = theme
         }
     }
 

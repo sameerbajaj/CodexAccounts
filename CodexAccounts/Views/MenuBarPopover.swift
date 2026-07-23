@@ -2,8 +2,6 @@
 //  MenuBarPopover.swift
 //  CodexAccounts
 //
-//  Created by Sameer Bajaj on 2/21/26.
-//
 
 import SwiftUI
 import AppKit
@@ -29,34 +27,39 @@ struct MenuBarPopover: View {
     @Bindable var viewModel: AccountsViewModel
     @State private var selectedTab: PopoverTab = .accounts
     @State private var draggedPinnedAccountID: String? = nil
+    @Namespace private var tabPickerNamespace
+
+    private var theme: ThemeColors { viewModel.themeColors }
 
     var body: some View {
         VStack(spacing: 0) {
             header
 
-            // Tab content area — fixed switch, no layout-shifting animation
+            // Tab content area
             Group {
                 switch selectedTab {
                 case .accounts:
                     accountsTabContent
                 case .settings:
-                    settingsPanel
-                        .padding(.horizontal, 10)
-                        .padding(.top, 10)
-                        .padding(.bottom, 6)
+                    ScrollView {
+                        settingsPanel
+                            .padding(.horizontal, AppSpacing.sm)
+                            .padding(.top, AppSpacing.sm)
+                            .padding(.bottom, AppSpacing.xs)
+                    }
                 }
             }
             .transition(.opacity)
-            .animation(.easeInOut(duration: 0.15), value: selectedTab)
+            .animation(.easeInOut(duration: AppAnimation.quick), value: selectedTab)
 
             Divider()
-                .background(Color.white.opacity(0.12))
+                .background(theme.divider)
             footer
         }
         .frame(width: 340)
-        .background(Color(red: 0.14, green: 0.14, blue: 0.16))
-        .environment(\.colorScheme, .dark)
-        .preferredColorScheme(.dark)
+        .background(theme.surfacePrimary)
+        .environment(\.colorScheme, viewModel.selectedTheme.preferredColorScheme)
+        .preferredColorScheme(viewModel.selectedTheme.preferredColorScheme)
         .task { viewModel.setup() }
     }
 
@@ -66,6 +69,7 @@ struct MenuBarPopover: View {
     private var accountsTabContent: some View {
         if viewModel.showingAddAccount {
             AddAccountView(
+                theme: theme,
                 status: viewModel.addAccountStatus,
                 authCommand: viewModel.addAccountCommand,
                 prompt: viewModel.addAccountPrompt,
@@ -74,7 +78,7 @@ struct MenuBarPopover: View {
             )
             .transition(.opacity)
         } else if viewModel.accounts.isEmpty {
-            EmptyStateView(onAddAccount: { viewModel.startAddingAccount() })
+            EmptyStateView(theme: theme, onAddAccount: { viewModel.startAddingAccount() })
                 .transition(.opacity)
         } else {
             mainContent
@@ -86,34 +90,20 @@ struct MenuBarPopover: View {
 
     private var header: some View {
         VStack(spacing: 0) {
-            // Row 1: Logo + Title + Toolbar actions
+            // Row 1: Monospaced Logo + Title + Toolbar actions
             HStack(spacing: 0) {
-                // Logo + title — fixed, never wraps
-                HStack(spacing: 10) {
-                    ZStack {
-                        RoundedRectangle(cornerRadius: 7)
-                            .fill(
-                                LinearGradient(
-                                    colors: [Color(red: 0.3, green: 0.45, blue: 1.0),
-                                             Color(red: 0.55, green: 0.25, blue: 0.95)],
-                                    startPoint: .topLeading, endPoint: .bottomTrailing
-                                )
-                            )
-                            .frame(width: 28, height: 28)
-                        Image(systemName: "chart.bar.fill")
-                            .font(.system(size: 13, weight: .semibold))
-                            .foregroundStyle(.white)
-                    }
-
-                    Text("Codex Accounts")
-                        .font(.system(size: 14, weight: .semibold))
-                        .foregroundStyle(.white)
-                        .fixedSize(horizontal: true, vertical: false)
+                HStack(spacing: 4) {
+                    Text("CODEX")
+                        .font(AppTypography.logoMono)
+                        .foregroundStyle(theme.textPrimary)
+                    Text("accounts")
+                        .font(AppTypography.logoMonoLight)
+                        .foregroundStyle(theme.textSecondary)
                 }
 
                 Spacer()
 
-                // Toolbar actions — only show when on accounts tab with accounts
+                // Toolbar actions
                 if selectedTab == .accounts && !viewModel.accounts.isEmpty {
                     HStack(spacing: 6) {
                         sortMenuButton
@@ -121,18 +111,18 @@ struct MenuBarPopover: View {
                     }
                 }
             }
-            .padding(.horizontal, 14)
-            .padding(.top, 12)
-            .padding(.bottom, 8)
+            .padding(.horizontal, AppSpacing.lg)
+            .padding(.top, AppSpacing.md)
+            .padding(.bottom, AppSpacing.sm)
 
-            // Row 2: Segmented tab picker
+            // Row 2: Segmented tab picker with sliding pill animation
             tabPicker
-                .padding(.horizontal, 14)
-                .padding(.bottom, 8)
+                .padding(.horizontal, AppSpacing.lg)
+                .padding(.bottom, AppSpacing.sm)
 
-            Divider().background(Color.white.opacity(0.12))
+            Divider().background(theme.divider)
         }
-        .background(Color.white.opacity(0.02))
+        .background(theme.surfaceSecondary.opacity(0.5))
     }
 
     // MARK: - Tab Picker
@@ -141,7 +131,7 @@ struct MenuBarPopover: View {
         HStack(spacing: 2) {
             ForEach(PopoverTab.allCases) { tab in
                 Button {
-                    withAnimation(.easeInOut(duration: 0.15)) {
+                    withAnimation(.spring(response: 0.2, dampingFraction: 0.8)) {
                         selectedTab = tab
                     }
                 } label: {
@@ -149,23 +139,22 @@ struct MenuBarPopover: View {
                         Image(systemName: tab.icon)
                             .font(.system(size: 10, weight: .medium))
                         Text(tab.rawValue)
-                            .font(.system(size: 11, weight: .medium))
+                            .font(AppTypography.captionMedium)
                     }
                     .foregroundStyle(
                         selectedTab == tab
-                            ? Color.white
-                            : Color.white.opacity(0.50)
+                            ? theme.textPrimary
+                            : theme.textTertiary
                     )
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 6)
-                    .background(
-                        RoundedRectangle(cornerRadius: 7)
-                            .fill(
-                                selectedTab == tab
-                                    ? Color.white.opacity(0.12)
-                                    : Color.clear
-                            )
-                    )
+                    .background {
+                        if selectedTab == tab {
+                            RoundedRectangle(cornerRadius: 7)
+                                .fill(theme.cardFill)
+                                .matchedGeometryEffect(id: "activeTab", in: tabPickerNamespace)
+                        }
+                    }
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
@@ -174,14 +163,8 @@ struct MenuBarPopover: View {
         .padding(3)
         .background(
             RoundedRectangle(cornerRadius: 9)
-                .fill(Color.white.opacity(0.06))
+                .fill(theme.surfaceSecondary)
         )
-    }
-
-    private var headerSubtitle: String {
-        let count = viewModel.accounts.count
-        guard count > 0 else { return "Track Codex usage from the menu bar" }
-        return "\(count) account\(count == 1 ? "" : "s") connected"
     }
 
     private var sortMenuButton: some View {
@@ -216,7 +199,7 @@ struct MenuBarPopover: View {
                 if viewModel.isRefreshing {
                     ProgressView()
                         .controlSize(.mini)
-                        .tint(Color.white.opacity(0.85))
+                        .tint(theme.textPrimary)
                         .frame(width: 30, height: 30)
                 }
             }
@@ -241,13 +224,13 @@ struct MenuBarPopover: View {
 
     private func toolbarButtonLabel(systemImage: String, isActive: Bool = false) -> some View {
         ZStack {
-            RoundedRectangle(cornerRadius: 8)
-                .fill(isActive ? Color.accentColor.opacity(0.16) : Color.white.opacity(0.08))
-            RoundedRectangle(cornerRadius: 8)
-                .stroke(isActive ? Color.accentColor.opacity(0.35) : Color.white.opacity(0.10), lineWidth: 1)
+            RoundedRectangle(cornerRadius: AppCornerRadius.md)
+                .fill(isActive ? theme.accentPrimary.opacity(0.16) : theme.cardFill)
+            RoundedRectangle(cornerRadius: AppCornerRadius.md)
+                .stroke(isActive ? theme.accentPrimary.opacity(0.35) : theme.cardStroke, lineWidth: 0.75)
             Image(systemName: systemImage)
                 .font(.system(size: 12, weight: .semibold))
-                .foregroundStyle(isActive ? Color.accentColor : Color.white.opacity(0.82))
+                .foregroundStyle(isActive ? theme.accentPrimary : theme.textSecondary)
         }
         .frame(width: 30, height: 30)
     }
@@ -257,82 +240,85 @@ struct MenuBarPopover: View {
             Image(systemName: systemImage)
                 .font(.system(size: 11, weight: .semibold))
             Text(text)
-                .font(.system(size: 10.5, weight: .semibold, design: .rounded))
+                .font(AppTypography.captionMedium)
                 .lineLimit(1)
         }
-        .foregroundStyle(isActive ? Color.accentColor : Color.white.opacity(0.90))
+        .foregroundStyle(isActive ? theme.accentPrimary : theme.textSecondary)
         .padding(.horizontal, 9)
         .frame(height: 30)
         .background(
-            RoundedRectangle(cornerRadius: 8)
-                .fill(isActive ? Color.accentColor.opacity(0.16) : Color.white.opacity(0.08))
+            RoundedRectangle(cornerRadius: AppCornerRadius.md)
+                .fill(isActive ? theme.accentPrimary.opacity(0.16) : theme.cardFill)
         )
         .overlay(
-            RoundedRectangle(cornerRadius: 8)
-                .stroke(isActive ? Color.accentColor.opacity(0.35) : Color.white.opacity(0.10), lineWidth: 1)
+            RoundedRectangle(cornerRadius: AppCornerRadius.md)
+                .stroke(isActive ? theme.accentPrimary.opacity(0.35) : theme.cardStroke, lineWidth: 0.75)
         )
     }
 
     // MARK: - Main Content
 
     private var mainContent: some View {
-        VStack(spacing: 0) {
-            if let update = viewModel.availableUpdate {
-                updateBanner(update)
-                Divider().background(Color.white.opacity(0.12))
-            }
+        ScrollView {
+            VStack(spacing: 0) {
+                if let update = viewModel.availableUpdate {
+                    updateBanner(update)
+                    Divider().background(theme.divider)
+                }
 
-            if let email = viewModel.detectedUntrackedEmail {
-                detectedBanner(email: email)
-                Divider().background(Color.white.opacity(0.12))
-            }
+                if let email = viewModel.detectedUntrackedEmail {
+                    detectedBanner(email: email)
+                    Divider().background(theme.divider)
+                }
 
-            VStack(spacing: 4) {
-                ForEach(viewModel.displayedAccounts) { account in
-                    let card = AccountCardView(
-                        account: account,
-                        usage: viewModel.usageData[account.id],
-                        usageDetailMode: viewModel.usageDetailMode,
-                        status: viewModel.accountStatuses[account.id] ?? .active,
-                        onRefresh: { Task { await viewModel.refreshAccount(account) } },
-                        onRemove: { viewModel.removeAccount(account) },
-                        onReauth: { viewModel.reauthAccount(account) },
-                        onTogglePin: { viewModel.togglePin(account) },
-                        onTestMessage: { viewModel.sendTestMessage(account) },
-                        onDismissTestResult: { viewModel.dismissTestResult(account.id) },
-                        onSetWeeklyAutoKickOverride: { viewModel.setWeeklyAutoKickOverride($0, for: account) },
-                        isTestingMessage: viewModel.testMessageLoading.contains(account.id),
-                        testResult: viewModel.testMessageResults[account.id],
-                        weeklyAutoKickOverride: viewModel.weeklyAutoKickOverride(for: account),
-                        weeklyAutoKickIndicator: viewModel.weeklyAutoKickIndicator(
-                            for: account,
-                            usage: viewModel.usageData[account.id]
-                        )
-                    )
-
-                    if account.isPinned {
-                        card
-                            .onDrag {
-                                draggedPinnedAccountID = account.id
-                                return NSItemProvider(object: account.id as NSString)
-                            }
-                            .onDrop(
-                                of: [UTType.text],
-                                delegate: PinnedAccountDropDelegate(
-                                    targetAccountID: account.id,
-                                    draggedPinnedAccountID: $draggedPinnedAccountID,
-                                    onMove: { draggedID, targetID in
-                                        viewModel.movePinnedAccount(draggedID, before: targetID)
-                                    }
-                                )
+                VStack(spacing: AppSpacing.sm) {
+                    ForEach(viewModel.displayedAccounts) { account in
+                        let card = AccountCardView(
+                            account: account,
+                            usage: viewModel.usageData[account.id],
+                            usageDetailMode: viewModel.usageDetailMode,
+                            status: viewModel.accountStatuses[account.id] ?? .active,
+                            theme: theme,
+                            onRefresh: { Task { await viewModel.refreshAccount(account) } },
+                            onRemove: { viewModel.removeAccount(account) },
+                            onReauth: { viewModel.reauthAccount(account) },
+                            onTogglePin: { viewModel.togglePin(account) },
+                            onTestMessage: { viewModel.sendTestMessage(account) },
+                            onDismissTestResult: { viewModel.dismissTestResult(account.id) },
+                            onSetWeeklyAutoKickOverride: { viewModel.setWeeklyAutoKickOverride($0, for: account) },
+                            isTestingMessage: viewModel.testMessageLoading.contains(account.id),
+                            testResult: viewModel.testMessageResults[account.id],
+                            weeklyAutoKickOverride: viewModel.weeklyAutoKickOverride(for: account),
+                            weeklyAutoKickIndicator: viewModel.weeklyAutoKickIndicator(
+                                for: account,
+                                usage: viewModel.usageData[account.id]
                             )
-                    } else {
-                        card
+                        )
+
+                        if account.isPinned {
+                            card
+                                .onDrag {
+                                    draggedPinnedAccountID = account.id
+                                    return NSItemProvider(object: account.id as NSString)
+                                }
+                                .onDrop(
+                                    of: [UTType.text],
+                                    delegate: PinnedAccountDropDelegate(
+                                        targetAccountID: account.id,
+                                        draggedPinnedAccountID: $draggedPinnedAccountID,
+                                        onMove: { draggedID, targetID in
+                                            viewModel.movePinnedAccount(draggedID, before: targetID)
+                                        }
+                                    )
+                                )
+                        } else {
+                            card
+                        }
                     }
                 }
+                .padding(.horizontal, AppSpacing.sm)
+                .padding(.vertical, AppSpacing.sm)
             }
-            .padding(.horizontal, 8)
-            .padding(.vertical, 8)
         }
     }
 
@@ -345,46 +331,48 @@ struct MenuBarPopover: View {
                 HStack(spacing: 10) {
                     ZStack {
                         Circle()
-                            .fill(Color.green.opacity(0.18))
+                            .fill(theme.successGreen.opacity(0.18))
                             .frame(width: 26, height: 26)
                         Image(systemName: "arrow.down.circle.fill")
                             .font(.system(size: 13))
-                            .foregroundStyle(.green)
+                            .foregroundStyle(theme.successGreen)
                     }
                     VStack(alignment: .leading, spacing: 2) {
                         Text(update.isRolling ? "New build available" : "Update available — v\(update.version)")
-                            .font(.system(size: 11, weight: .semibold))
-                            .foregroundStyle(.white)
+                            .font(AppTypography.bodyMedium)
+                            .foregroundStyle(theme.textPrimary)
                         Text("Installs automatically — no drag & drop")
-                            .font(.system(size: 10))
-                            .foregroundStyle(Color.white.opacity(0.80))
+                            .font(AppTypography.caption)
+                            .foregroundStyle(theme.textSecondary)
                     }
                     Spacer()
                     if update.downloadURL != nil {
                         Button { viewModel.installUpdate() } label: {
                             Text("Install")
-                                .font(.system(size: 10, weight: .semibold))
-                                .foregroundStyle(.black)
+                                .font(AppTypography.micro)
+                                .fontWeight(.bold)
+                                .foregroundStyle(.white)
                                 .padding(.horizontal, 11)
                                 .padding(.vertical, 5)
-                                .background(Capsule().fill(Color.green))
+                                .background(Capsule().fill(theme.successGreen))
                         }
                         .buttonStyle(.plain)
                     } else {
                         Button { NSWorkspace.shared.open(update.releaseURL) } label: {
                             Text("Download")
-                                .font(.system(size: 10, weight: .semibold))
-                                .foregroundStyle(.black)
+                                .font(AppTypography.micro)
+                                .fontWeight(.bold)
+                                .foregroundStyle(.white)
                                 .padding(.horizontal, 11)
                                 .padding(.vertical, 5)
-                                .background(Capsule().fill(Color.green))
+                                .background(Capsule().fill(theme.successGreen))
                         }
                         .buttonStyle(.plain)
                     }
                     Button(action: { viewModel.dismissUpdate() }) {
                         Image(systemName: "xmark")
                             .font(.system(size: 8, weight: .bold))
-                            .foregroundStyle(Color.white.opacity(0.35))
+                            .foregroundStyle(theme.textTertiary)
                     }
                     .buttonStyle(.plain)
                 }
@@ -394,15 +382,15 @@ struct MenuBarPopover: View {
                     ProgressView().controlSize(.small)
                     VStack(alignment: .leading, spacing: 3) {
                         Text("Downloading update…")
-                            .font(.system(size: 11, weight: .semibold))
-                            .foregroundStyle(.white)
+                            .font(AppTypography.bodyMedium)
+                            .foregroundStyle(theme.textPrimary)
                         ProgressView(value: progress)
                             .progressViewStyle(.linear)
-                            .tint(.green)
+                            .tint(theme.successGreen)
                     }
                     Text("\(Int(progress * 100))%")
-                        .font(.system(size: 10, weight: .medium))
-                        .foregroundStyle(Color.white.opacity(0.80))
+                        .font(AppTypography.statSmall)
+                        .foregroundStyle(theme.textSecondary)
                         .frame(width: 32, alignment: .trailing)
                 }
 
@@ -410,8 +398,8 @@ struct MenuBarPopover: View {
                 HStack(spacing: 10) {
                     ProgressView().controlSize(.small)
                     Text("Installing — app will relaunch…")
-                        .font(.system(size: 11, weight: .semibold))
-                        .foregroundStyle(.white)
+                        .font(AppTypography.bodyMedium)
+                        .foregroundStyle(theme.textPrimary)
                     Spacer()
                 }
 
@@ -419,14 +407,14 @@ struct MenuBarPopover: View {
                 HStack(spacing: 10) {
                     Image(systemName: "exclamationmark.triangle.fill")
                         .font(.system(size: 13))
-                        .foregroundStyle(.orange)
+                        .foregroundStyle(theme.warningOrange)
                     VStack(alignment: .leading, spacing: 2) {
                         Text("Update failed")
-                            .font(.system(size: 11, weight: .semibold))
-                            .foregroundStyle(.white)
+                            .font(AppTypography.bodyMedium)
+                            .foregroundStyle(theme.textPrimary)
                         Text(message)
-                            .font(.system(size: 10))
-                            .foregroundStyle(Color.white.opacity(0.70))
+                            .font(AppTypography.caption)
+                            .foregroundStyle(theme.textSecondary)
                             .lineLimit(2)
                     }
                     Spacer()
@@ -434,20 +422,21 @@ struct MenuBarPopover: View {
                         viewModel.selfUpdateState = .idle
                     } label: {
                         Text("Retry")
-                            .font(.system(size: 10, weight: .semibold))
-                            .foregroundStyle(.black)
+                            .font(AppTypography.micro)
+                            .fontWeight(.bold)
+                            .foregroundStyle(.white)
                             .padding(.horizontal, 11)
                             .padding(.vertical, 5)
-                            .background(Capsule().fill(Color.orange))
+                            .background(Capsule().fill(theme.warningOrange))
                     }
                     .buttonStyle(.plain)
                 }
             }
         }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 10)
-        .background(Color.green.opacity(0.07))
-        .animation(.easeInOut(duration: 0.25), value: viewModel.selfUpdateState)
+        .padding(.horizontal, AppSpacing.md)
+        .padding(.vertical, AppSpacing.sm)
+        .background(theme.successGreen.opacity(0.08))
+        .animation(.easeInOut(duration: AppAnimation.standard), value: viewModel.selfUpdateState)
     }
 
     // MARK: - Detected Banner
@@ -456,31 +445,76 @@ struct MenuBarPopover: View {
         HStack(spacing: 10) {
             Image(systemName: "sparkle")
                 .font(.system(size: 11))
-                .foregroundStyle(.blue)
+                .foregroundStyle(theme.accentPrimary)
             Text("Detected: \(email)")
-                .font(.system(size: 11))
-                .foregroundStyle(.white)
+                .font(AppTypography.bodyMedium)
+                .foregroundStyle(theme.textPrimary)
                 .lineLimit(1)
             Spacer()
             Button("Add") { viewModel.addDetectedAccount() }
-                .buttonStyle(.borderedProminent)
-                .controlSize(.mini)
+                .buttonStyle(GlassButtonStyle(color: theme.accentPrimary, isCompact: true))
             Button(action: { viewModel.dismissDetected() }) {
                 Image(systemName: "xmark")
                     .font(.system(size: 8, weight: .bold))
             }
             .buttonStyle(.plain)
-            .foregroundStyle(Color.white.opacity(0.60))
+            .foregroundStyle(theme.textTertiary)
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 10)
+        .padding(.horizontal, AppSpacing.md)
+        .padding(.vertical, AppSpacing.sm)
+        .background(theme.accentPrimary.opacity(0.08))
     }
 
     // MARK: - Settings Panel
 
     private var settingsPanel: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            settingsSection(title: "Menu Bar Shows") {
+        VStack(alignment: .leading, spacing: AppSpacing.md) {
+            // Theme selector card
+            VStack(alignment: .leading, spacing: AppSpacing.sm) {
+                Text("THEME")
+                    .font(AppTypography.micro)
+                    .foregroundStyle(theme.textTertiary)
+
+                HStack(spacing: AppSpacing.xs) {
+                    ForEach(AppTheme.allCases) { t in
+                        Button {
+                            withAnimation(AppAnimation.spring()) {
+                                viewModel.selectedTheme = t
+                            }
+                        } label: {
+                            VStack(spacing: 4) {
+                                Image(systemName: t.iconName)
+                                    .font(.system(size: 13))
+                                Text(t.displayName)
+                                    .font(AppTypography.micro)
+                            }
+                            .foregroundStyle(
+                                viewModel.selectedTheme == t
+                                    ? theme.accentPrimary
+                                    : theme.textTertiary
+                            )
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, AppSpacing.sm)
+                            .background(
+                                RoundedRectangle(cornerRadius: AppCornerRadius.sm)
+                                    .fill(viewModel.selectedTheme == t
+                                          ? theme.accentPrimary.opacity(0.12)
+                                          : theme.surfaceSecondary)
+                            )
+                            .overlay(
+                                RoundedRectangle(cornerRadius: AppCornerRadius.sm)
+                                    .stroke(viewModel.selectedTheme == t ? theme.accentPrimary.opacity(0.35) : .clear, lineWidth: 1)
+                            )
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+            }
+            .padding(AppSpacing.md)
+            .themedCard(theme: theme)
+
+            // Settings sections
+            settingsGroup(title: "Menu Bar Display") {
                 ForEach(AccountsViewModel.MenuBarDisplayMode.allCases) { mode in
                     settingsRow(
                         icon: mode.icon,
@@ -493,9 +527,7 @@ struct MenuBarPopover: View {
                 }
             }
 
-            Divider().background(Color.white.opacity(0.12)).padding(.horizontal, 14)
-
-            settingsSection(title: "Auto-Refresh") {
+            settingsGroup(title: "Auto-Refresh") {
                 ForEach(AccountsViewModel.RefreshInterval.allCases) { interval in
                     settingsRow(
                         icon: interval.icon,
@@ -508,9 +540,7 @@ struct MenuBarPopover: View {
                 }
             }
 
-            Divider().background(Color.white.opacity(0.12)).padding(.horizontal, 14)
-
-            settingsSection(title: "Weekly Auto-Kick") {
+            settingsGroup(title: "Weekly Auto-Kick") {
                 ForEach(WeeklyAutoKickMode.allCases) { mode in
                     settingsRow(
                         icon: mode.icon,
@@ -523,9 +553,7 @@ struct MenuBarPopover: View {
                 }
             }
 
-            Divider().background(Color.white.opacity(0.12)).padding(.horizontal, 14)
-
-            settingsSection(title: "Usage Cards") {
+            settingsGroup(title: "Usage Detail Mode") {
                 ForEach(AccountsViewModel.UsageDetailMode.allCases) { mode in
                     settingsRow(
                         icon: mode.icon,
@@ -538,165 +566,101 @@ struct MenuBarPopover: View {
                 }
             }
 
-            Divider().background(Color.white.opacity(0.12)).padding(.horizontal, 14)
-
-            settingsSection(title: "Updates") {
-                HStack(alignment: .top, spacing: 10) {
-                    Image(systemName: "arrow.triangle.2.circlepath.circle")
-                        .font(.system(size: 13, weight: .medium))
-                        .foregroundStyle(Color.white.opacity(0.80))
-                        .frame(width: 16)
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("Check automatically on launch")
-                            .font(.system(size: 12, weight: .semibold))
-                            .foregroundStyle(.white)
-                        Text("Detect new versions / latest builds on startup")
-                            .font(.system(size: 10.5))
-                            .foregroundStyle(Color.white.opacity(0.75))
-                    }
-                    Spacer()
-                    Toggle("", isOn: $viewModel.autoCheckUpdatesOnLaunch)
-                        .labelsHidden()
-                }
-                .padding(.horizontal, 14)
-                .padding(.vertical, 10)
-
-                HStack {
-                    Spacer()
-                    Button {
-                        Task { await viewModel.checkForUpdates(showUpToDateFeedback: true) }
-                    } label: {
-                        if viewModel.isCheckingForUpdates {
-                            ProgressView()
-                                .controlSize(.small)
-                        } else {
-                            Label("Check Now", systemImage: "arrow.clockwise")
-                                .font(.system(size: 11, weight: .semibold))
+            settingsGroup(title: "Updates") {
+                VStack(alignment: .leading, spacing: AppSpacing.sm) {
+                    HStack {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Check automatically on launch")
+                                .font(AppTypography.bodyMedium)
+                                .foregroundStyle(theme.textPrimary)
+                            Text("Detect new versions on startup")
+                                .font(AppTypography.caption)
+                                .foregroundStyle(theme.textTertiary)
                         }
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .tint(Color.white.opacity(0.15))
-                    .foregroundStyle(.white)
-                    .controlSize(.small)
-                    .disabled(viewModel.isCheckingForUpdates)
-                    .padding(.horizontal, 14)
-                    .padding(.bottom, 10)
-                }
-
-                if let message = viewModel.updateCheckMessage {
-                    Text(message)
-                        .font(.system(size: 10.5, weight: .medium))
-                        .foregroundStyle(Color.white.opacity(0.80))
-                        .padding(.horizontal, 14)
-                        .padding(.bottom, viewModel.availableUpdate != nil ? 6 : 10)
-                }
-
-                if let update = viewModel.availableUpdate, viewModel.selfUpdateState == .idle {
-                    HStack(spacing: 10) {
-                        Image(systemName: "arrow.down.circle.fill")
-                            .font(.system(size: 13))
-                            .foregroundStyle(.green)
-                        Text(update.isRolling ? "New build available" : "v\(update.version) available")
-                            .font(.system(size: 11, weight: .semibold))
-                            .foregroundStyle(.white)
                         Spacer()
-                        if update.downloadURL != nil {
-                            Button { viewModel.installUpdate() } label: {
-                                Text("Install")
-                                    .font(.system(size: 10, weight: .semibold))
-                                    .foregroundStyle(.black)
-                                    .padding(.horizontal, 11)
-                                    .padding(.vertical, 5)
-                                    .background(Capsule().fill(Color.green))
-                            }
-                            .buttonStyle(.plain)
-                        } else {
-                            Button { NSWorkspace.shared.open(update.releaseURL) } label: {
-                                Text("Download")
-                                    .font(.system(size: 10, weight: .semibold))
-                                    .foregroundStyle(.black)
-                                    .padding(.horizontal, 11)
-                                    .padding(.vertical, 5)
-                                    .background(Capsule().fill(Color.green))
-                            }
-                            .buttonStyle(.plain)
-                        }
+                        Toggle("", isOn: $viewModel.autoCheckUpdatesOnLaunch)
+                            .labelsHidden()
                     }
-                    .padding(.horizontal, 14)
-                    .padding(.bottom, 10)
+
+                    HStack {
+                        if let message = viewModel.updateCheckMessage {
+                            Text(message)
+                                .font(AppTypography.caption)
+                                .foregroundStyle(theme.textSecondary)
+                        }
+                        Spacer()
+                        Button {
+                            Task { await viewModel.checkForUpdates(showUpToDateFeedback: true) }
+                        } label: {
+                            if viewModel.isCheckingForUpdates {
+                                ProgressView().controlSize(.small)
+                            } else {
+                                Label("Check Now", systemImage: "arrow.clockwise")
+                                    .font(AppTypography.captionMedium)
+                            }
+                        }
+                        .buttonStyle(SubtleButtonStyle(theme: theme))
+                        .disabled(viewModel.isCheckingForUpdates)
+                    }
                 }
+                .padding(AppSpacing.md)
             }
         }
-        .padding(.bottom, 8)
-        .background(
-            RoundedRectangle(cornerRadius: 16)
-                .fill(Color.white.opacity(0.04))
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 16)
-                .stroke(Color.white.opacity(0.08), lineWidth: 1)
-        )
     }
 
-    private func settingsSection<Content: View>(title: String, @ViewBuilder content: () -> Content) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text(title)
-                .font(.system(size: 9.5, weight: .bold))
-                .foregroundStyle(Color.white.opacity(0.70))
-                .textCase(.uppercase)
-                .tracking(1.2)
-                .padding(.horizontal, 14)
-                .padding(.top, 12)
-                .padding(.bottom, 2)
+    private func settingsGroup<Content: View>(title: String, @ViewBuilder content: () -> Content) -> some View {
+        VStack(alignment: .leading, spacing: AppSpacing.xs) {
+            Text(title.uppercased())
+                .font(AppTypography.micro)
+                .foregroundStyle(theme.textTertiary)
+                .padding(.leading, 4)
 
             VStack(spacing: 1) {
                 content()
             }
-            .padding(.bottom, 6)
+            .padding(AppSpacing.xs)
+            .themedCard(theme: theme)
         }
     }
 
-    private func settingsRow(icon: String, label: String, description: String, isSelected: Bool, action: @escaping () -> Void) -> some View {
+    private func settingsRow(
+        icon: String,
+        label: String,
+        description: String,
+        isSelected: Bool,
+        action: @escaping () -> Void
+    ) -> some View {
         Button(action: action) {
             HStack(spacing: 10) {
-                ZStack {
-                    Circle()
-                        .strokeBorder(
-                            isSelected ? Color.accentColor : Color.white.opacity(0.50),
-                            lineWidth: 1.5
-                        )
-                        .frame(width: 14, height: 14)
-                    if isSelected {
-                        Circle()
-                            .fill(Color.accentColor)
-                            .frame(width: 7, height: 7)
-                    }
-                }
-
                 Image(systemName: icon)
-                    .font(.system(size: 11))
-                    .foregroundStyle(isSelected ? Color.accentColor : Color.white.opacity(0.80))
-                    .frame(width: 16)
+                    .font(.system(size: 12))
+                    .foregroundStyle(isSelected ? theme.accentPrimary : theme.textTertiary)
+                    .frame(width: 18)
 
-                VStack(alignment: .leading, spacing: 1) {
+                VStack(alignment: .leading, spacing: 2) {
                     Text(label)
-                        .font(.system(size: 12, weight: isSelected ? .semibold : .regular))
-                        .foregroundStyle(isSelected ? .white : Color.white.opacity(0.90))
+                        .font(AppTypography.bodyMedium)
+                        .foregroundStyle(isSelected ? theme.textPrimary : theme.textSecondary)
                     Text(description)
-                        .font(.system(size: 10.5))
-                        .foregroundStyle(Color.white.opacity(0.75))
+                        .font(AppTypography.caption)
+                        .foregroundStyle(theme.textTertiary)
                 }
 
                 Spacer()
+
+                if isSelected {
+                    Image(systemName: "checkmark.circle.fill")
+                        .font(.system(size: 14))
+                        .foregroundStyle(theme.accentPrimary)
+                }
             }
-            .contentShape(Rectangle())
-            .padding(.horizontal, 14)
-            .padding(.vertical, 6)
+            .padding(.horizontal, AppSpacing.sm)
+            .padding(.vertical, AppSpacing.sm)
             .background(
-                isSelected
-                    ? Color.accentColor.opacity(0.12)
-                    : Color.clear
+                RoundedRectangle(cornerRadius: AppCornerRadius.sm)
+                    .fill(isSelected ? theme.accentPrimary.opacity(0.08) : Color.clear)
             )
+            .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
     }
@@ -704,43 +668,36 @@ struct MenuBarPopover: View {
     // MARK: - Footer
 
     private var footer: some View {
-        VStack(spacing: 6) {
-            HStack {
-                Button(action: { viewModel.startAddingAccount() }) {
-                    HStack(spacing: 5) {
-                        Image(systemName: "plus.circle.fill")
-                            .font(.system(size: 12))
-                        Text("Add Account")
-                            .font(.system(size: 11, weight: .medium))
-                    }
-                }
-                .buttonStyle(.plain)
-                .foregroundStyle(Color(red: 0.40, green: 0.65, blue: 1.0))
-
-                Spacer()
-
-                Button {
-                    NSWorkspace.shared.open(UpdateChecker.releasesPage)
-                } label: {
-                    Text("v\(UpdateChecker.currentVersion)")
-                        .font(.system(size: 9.5, weight: .medium))
-                        .foregroundStyle(viewModel.availableUpdate != nil
-                                         ? Color.green
-                                         : Color.white.opacity(0.60))
-                }
-                .buttonStyle(.plain)
-                .padding(.horizontal, 4)
-
-                Button("Quit") { NSApplication.shared.terminate(nil) }
-                    .buttonStyle(.plain)
-                    .font(.system(size: 11, weight: .medium))
-                    .foregroundStyle(Color.white.opacity(0.75))
+        HStack {
+            Button { viewModel.startAddingAccount() } label: {
+                Label("Add Account", systemImage: "plus.circle.fill")
+                    .font(AppTypography.captionMedium)
+                    .foregroundStyle(theme.accentPrimary)
             }
+            .buttonStyle(.plain)
+
+            Spacer()
+
+            Text("v\(currentVersion)")
+                .font(AppTypography.mono)
+                .foregroundStyle(theme.textTertiary)
+
+            Button("Quit") { NSApp.terminate(nil) }
+                .font(AppTypography.captionMedium)
+                .foregroundStyle(theme.dangerRed.opacity(0.8))
+                .buttonStyle(.plain)
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 10)
+        .padding(.horizontal, AppSpacing.lg)
+        .padding(.vertical, AppSpacing.sm)
+        .background(theme.surfaceSecondary.opacity(0.5))
+    }
+
+    private var currentVersion: String {
+        Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0.0"
     }
 }
+
+// MARK: - Drag and Drop Delegate
 
 private struct PinnedAccountDropDelegate: DropDelegate {
     let targetAccountID: String
