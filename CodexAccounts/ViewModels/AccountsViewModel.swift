@@ -983,6 +983,10 @@ final class AccountsViewModel {
         let current = currentAccount(id: account.id) ?? account
         let now = Date()
 
+        if let usage, !usage.hasWeeklyWindow {
+            return nil
+        }
+
         if let usage,
            let slidingResetStatus = slidingWeeklyResetIndicator(for: current, usage: usage, now: now)
         {

@@ -222,7 +222,7 @@ enum UsageWindowKind: String, Codable, CaseIterable {
     static func classify(seconds: Int) -> UsageWindowKind {
         if seconds <= 3 * 24 * 3600 {
             return .shortTerm
-        } else if seconds >= 5 * 24 * 3600 && seconds <= 10 * 24 * 3600 {
+        } else if seconds >= 5 * 24 * 3600 && seconds <= 8 * 24 * 3600 {
             return .weekly
         } else if seconds >= 25 * 24 * 3600 && seconds <= 35 * 24 * 3600 {
             return .monthly
