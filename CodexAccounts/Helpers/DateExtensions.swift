@@ -16,8 +16,8 @@ extension Date {
     }
 
     /// Countdown description for reset times, e.g. "in 2h 15m"
-    var resetDescription: String {
-        let interval = self.timeIntervalSince(Date())
+    func resetDescription(relativeTo now: Date = Date()) -> String {
+        let interval = self.timeIntervalSince(now)
         if interval <= 0 { return "now" }
 
         let totalMinutes = Int(interval / 60)
@@ -33,5 +33,9 @@ extension Date {
         } else {
             return "in \(minutes)m"
         }
+    }
+
+    var resetDescription: String {
+        resetDescription(relativeTo: Date())
     }
 }

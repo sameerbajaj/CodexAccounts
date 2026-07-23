@@ -514,6 +514,41 @@ struct AccountUsage: Equatable {
         return now.timeIntervalSince(weeklyResetAt) >= grace
     }
 
+    var activatableWindow: UsageWindow? {
+        if let weekly = weeklyWindow { return weekly }
+        if let prim = primaryWindow, (prim.kind == .monthly || prim.windowDurationSeconds >= AccountUsage.weeklyWindowThresholdSeconds) {
+            return prim
+        }
+        if let sec = secondaryWindow, (sec.kind == .monthly || sec.windowDurationSeconds >= AccountUsage.weeklyWindowThresholdSeconds) {
+            return sec
+        }
+        return additionalWindows.first(where: { $0.kind == .monthly || $0.windowDurationSeconds >= AccountUsage.weeklyWindowThresholdSeconds })
+    }
+
+    var hasActivatableWindow: Bool { activatableWindow != nil }
+
+    var activatableResetAt: Date? {
+        activatableWindow?.resetAt
+    }
+
+    var activatableRemainingPercent: Double? {
+        activatableWindow?.remainingPercent
+    }
+
+    var activatableWindowSeconds: Int? {
+        activatableWindow?.windowDurationSeconds
+    }
+
+    var activatableCycleIdentifier: String? {
+        guard let resetAt = activatableResetAt else { return nil }
+        return String(Int(resetAt.timeIntervalSince1970))
+    }
+
+    func activatableResetIsOverdue(now: Date = Date(), grace: TimeInterval = 0) -> Bool {
+        guard let resetAt = activatableResetAt else { return false }
+        return now.timeIntervalSince(resetAt) >= grace
+    }
+
     static let placeholder = AccountUsage(
         primaryWindow: UsageWindow(usedPercent: 0, resetAt: nil, windowDurationSeconds: 0),
         secondaryWindow: nil,

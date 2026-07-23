@@ -133,12 +133,52 @@ struct AccountCardView: View {
 
             planBadge
 
-            Button(action: {}) {
+            Menu {
+                Button(action: onTogglePin) {
+                    Label(account.isPinned ? "Unpin" : "Pin to top",
+                          systemImage: account.isPinned ? "pin.slash" : "pin")
+                }
+                Button(action: onTestMessage) {
+                    Label("Send test message", systemImage: "paperplane")
+                }
+                .disabled(isTestingMessage)
+                Button(action: onRefresh) {
+                    Label("Refresh", systemImage: "arrow.clockwise")
+                }
+                Menu("Auto-Kick / Activation") {
+                    Button(action: { onSetWeeklyAutoKickOverride(.inherit) }) {
+                        HStack {
+                            Text("Use Global Setting")
+                            if weeklyAutoKickOverride == .inherit { Image(systemName: "checkmark") }
+                        }
+                    }
+                    Button(action: { onSetWeeklyAutoKickOverride(.forceOn) }) {
+                        HStack {
+                            Text("Always Enable for This Account")
+                            if weeklyAutoKickOverride == .forceOn { Image(systemName: "checkmark") }
+                        }
+                    }
+                    Button(action: { onSetWeeklyAutoKickOverride(.forceOff) }) {
+                        HStack {
+                            Text("Always Disable for This Account")
+                            if weeklyAutoKickOverride == .forceOff { Image(systemName: "checkmark") }
+                        }
+                    }
+                }
+                Divider()
+                Button(action: onReauth) {
+                    Label("Re-authenticate…", systemImage: "arrow.triangle.2.circlepath")
+                }
+                Button(role: .destructive, action: onRemove) {
+                    Label("Remove Account", systemImage: "trash")
+                }
+            } label: {
                 Image(systemName: "ellipsis")
                     .font(.system(size: 12))
                     .foregroundStyle(theme.textTertiary)
             }
-            .buttonStyle(.plain)
+            .menuStyle(.borderlessButton)
+            .menuIndicator(.hidden)
             .opacity(isHovering ? 1 : 0)
             .animation(.easeInOut(duration: AppAnimation.quick), value: isHovering)
         }
@@ -225,13 +265,13 @@ struct AccountCardView: View {
         return account.authState == .needsReauth
     }
 
-    // MARK: - Usage Rows
-
     @ViewBuilder
     private func usageRows(_ usage: AccountUsage) -> some View {
         VStack(alignment: .leading, spacing: AppSpacing.xs) {
-            // Primary progress meter
-            primaryMeterView(usage)
+            if usage.primaryWindow != nil {
+                // Primary progress meter
+                primaryMeterView(usage)
+            }
 
             // Details row (UUID, live pulse, activity)
             detailsSubRow(usage)
@@ -319,7 +359,9 @@ struct AccountCardView: View {
 
             Spacer()
 
-            PulsingDot(color: theme.successGreen)
+            if usage.error == nil, case .active = status {
+                PulsingDot(color: theme.successGreen)
+            }
 
             if let lastActivity = usage.lastActivityAt {
                 Text(relativeTimeString(from: lastActivity))
@@ -352,14 +394,7 @@ struct AccountCardView: View {
         guard let resetAt = usage.resetAt else { return "" }
         let now = Date()
         guard resetAt > now else { return "Resetting soon" }
-        let diff = Int(resetAt.timeIntervalSince(now))
-        let hours = diff / 3600
-        let minutes = (diff % 3600) / 60
-        if hours > 0 {
-            return "Resets in \(hours)h \(minutes)m"
-        } else {
-            return "Resets in \(minutes)m"
-        }
+        return "Resets " + resetAt.resetDescription
     }
 
     private func relativeTimeString(from date: Date) -> String {

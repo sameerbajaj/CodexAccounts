@@ -619,6 +619,81 @@ struct CodexAccountsTests {
         )
     }
 
+    @Test func testDateResetDescriptionFormatting() async throws {
+        let now = Date(timeIntervalSince1970: 1_000_000)
+
+        let subHour = now.addingTimeInterval(42 * 60)
+        #expect(subHour.resetDescription(relativeTo: now) == "in 42m")
+
+        let multiHourSecs: TimeInterval = 5 * 3600 + 12 * 60
+        let multiHour = now.addingTimeInterval(multiHourSecs)
+        #expect(multiHour.resetDescription(relativeTo: now) == "in 5h 12m")
+
+        let daysSecs: TimeInterval = 9 * 86400
+        let hoursSecs: TimeInterval = 18 * 3600
+        let minsSecs: TimeInterval = 42 * 60
+        let nineDays = now.addingTimeInterval(daysSecs + hoursSecs + minsSecs)
+        #expect(nineDays.resetDescription(relativeTo: now) == "in 9d 18h 42m")
+
+        let thirtyDaysSecs: TimeInterval = 30 * 86400 - 60
+        let thirtyDays = now.addingTimeInterval(thirtyDaysSecs)
+        #expect(thirtyDays.resetDescription(relativeTo: now) == "in 29d 23h 59m")
+    }
+
+    @Test func testSlidingMonthlyWindowDetection() async throws {
+        let t1 = Date(timeIntervalSince1970: 1_000_000)
+        let thirtyDays: TimeInterval = 30 * 24 * 60 * 60
+
+        let reset1 = t1.addingTimeInterval(thirtyDays)
+
+        let t2 = t1.addingTimeInterval(7200)
+        let reset2 = reset1.addingTimeInterval(7200)
+
+        let isSliding = AccountsViewModel.weeklyResetAppearsSliding(
+            previousResetAt: reset1,
+            previousObservedAt: t1,
+            currentResetAt: reset2,
+            currentObservedAt: t2,
+            weeklyWindowSeconds: Int(thirtyDays),
+            remainingPercent: 100.0,
+            minimumRemainingPercent: 95.0
+        )
+
+        #expect(isSliding)
+    }
+
+    @Test func testStaticMonthlyWindowDoesNotActivate() async throws {
+        let t1 = Date(timeIntervalSince1970: 1_000_000)
+        let thirtyDays: TimeInterval = 30 * 24 * 60 * 60
+
+        let reset1 = t1.addingTimeInterval(thirtyDays)
+
+        let t2 = t1.addingTimeInterval(7200)
+        let reset2 = reset1
+
+        let isSliding = AccountsViewModel.weeklyResetAppearsSliding(
+            previousResetAt: reset1,
+            previousObservedAt: t1,
+            currentResetAt: reset2,
+            currentObservedAt: t2,
+            weeklyWindowSeconds: Int(thirtyDays),
+            remainingPercent: 100.0,
+            minimumRemainingPercent: 95.0
+        )
+
+        #expect(!isSliding)
+    }
+
+    @Test func testActivatableWindowUnified() async throws {
+        let monthlyUsage = AccountUsage(
+            primaryWindow: UsageWindow(usedPercent: 0, resetAt: Date(), windowDurationSeconds: 30 * 24 * 60 * 60, kind: .monthly),
+            secondaryWindow: nil
+        )
+
+        #expect(monthlyUsage.hasActivatableWindow)
+        #expect(monthlyUsage.activatableWindow?.kind == .monthly)
+    }
+
     private func makeUsage(
         weeklyUsedPercent: Double,
         weeklyResetAt: Date

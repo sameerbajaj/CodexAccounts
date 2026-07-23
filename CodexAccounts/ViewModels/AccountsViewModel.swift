@@ -1299,7 +1299,7 @@ final class AccountsViewModel {
             weeklyAutoKickNextCheckAt.removeValue(forKey: accountID)
             return
         }
-        guard let usage = usageData[accountID], usage.hasWeeklyWindow else {
+        guard let usage = usageData[accountID], usage.hasActivatableWindow else {
             weeklyAutoKickNextCheckAt.removeValue(forKey: accountID)
             return
         }
@@ -1320,12 +1320,12 @@ final class AccountsViewModel {
             return
         }
 
-        if !usage.weeklyResetIsOverdue(now: now, grace: weeklyAutoKickDelay) {
+        if !usage.activatableResetIsOverdue(now: now, grace: weeklyAutoKickDelay) {
             scheduleNextWeeklyAutoKickCheck(for: accountID, usage: usage, now: now)
             return
         }
 
-        let cycleID = usage.weeklyCycleIdentifier
+        let cycleID = usage.activatableCycleIdentifier
         if shouldPauseWeeklyAutoKick(account: account, cycleID: cycleID, now: now) {
             scheduleRetryWeeklyAutoKickCheck(for: accountID, account: account, now: now)
             return
@@ -1335,18 +1335,18 @@ final class AccountsViewModel {
 
         guard let refreshedAccount = currentAccount(id: accountID),
               let refreshedUsage = usageData[accountID],
-              refreshedUsage.hasWeeklyWindow
+              refreshedUsage.hasActivatableWindow
         else {
             weeklyAutoKickNextCheckAt.removeValue(forKey: accountID)
             return
         }
 
-        if !refreshedUsage.weeklyResetIsOverdue(now: now, grace: weeklyResetDisplayGrace) {
+        if !refreshedUsage.activatableResetIsOverdue(now: now, grace: weeklyResetDisplayGrace) {
             scheduleNextWeeklyAutoKickCheck(for: accountID, usage: refreshedUsage, now: now)
             return
         }
 
-        let refreshedCycleID = refreshedUsage.weeklyCycleIdentifier
+        let refreshedCycleID = refreshedUsage.activatableCycleIdentifier
         if shouldPauseWeeklyAutoKick(account: refreshedAccount, cycleID: refreshedCycleID, now: now) {
             scheduleRetryWeeklyAutoKickCheck(for: accountID, account: refreshedAccount, now: now)
             return
@@ -1377,14 +1377,14 @@ final class AccountsViewModel {
         usage: AccountUsage,
         now: Date
     ) -> Bool {
-        guard slidingWeeklyResetAccountIDs.contains(account.id) else { return false }
         guard isWeeklyAutoKickEnabled(for: account) else { return false }
         guard account.authState != .needsReauth, account.authState != .degraded else { return false }
+        if slidingWeeklyResetAccountIDs.contains(account.id) { return true }
         return slidingWeeklyResetCandidate(usage: usage, now: now)
     }
 
     private func slidingWeeklyResetCandidate(usage: AccountUsage, now: Date) -> Bool {
-        guard let resetAt = usage.weeklyResetAt,
+        guard let resetAt = usage.activatableResetAt,
               resetAt > now,
               let remaining = weeklyRemainingPercent(for: usage),
               remaining >= slidingWeeklyResetMinimumRemaining
@@ -1392,13 +1392,13 @@ final class AccountsViewModel {
             return false
         }
 
-        let window = TimeInterval(usage.weeklyWindowSeconds ?? 7 * 24 * 60 * 60)
+        let window = TimeInterval(usage.activatableWindowSeconds ?? 7 * 24 * 60 * 60)
         let secondsUntilReset = resetAt.timeIntervalSince(now)
         return abs(secondsUntilReset - window) <= AccountsViewModel.slidingResetFullWindowTolerance
     }
 
     private func weeklyRemainingPercent(for usage: AccountUsage) -> Double? {
-        usage.weeklyRemainingPercent ?? (usage.isWeeklyPrimary ? usage.remainingPercent : nil)
+        usage.activatableRemainingPercent ?? usage.weeklyRemainingPercent ?? (usage.isWeeklyPrimary ? usage.remainingPercent : usage.remainingPercent)
     }
 
     private func slidingWeeklyResetCycleIdentifier(now: Date) -> String {
@@ -1876,10 +1876,25 @@ final class AccountsViewModel {
     }
 
     private func setUsageError(_ message: String, for accountID: String) {
-        var usage = usageData[accountID] ?? AccountUsage.placeholder
-        usage.error = message
-        usage.lastUpdated = Date()
-        usageData[accountID] = usage
+        if var usage = usageData[accountID] {
+            usage.error = message
+            usage.lastUpdated = Date()
+            usageData[accountID] = usage
+        } else {
+            usageData[accountID] = AccountUsage(
+                primaryWindow: nil,
+                secondaryWindow: nil,
+                additionalWindows: [],
+                allowed: nil,
+                limitReached: nil,
+                creditsBalance: nil,
+                hasCredits: false,
+                isUnlimited: false,
+                lastUpdated: Date(),
+                error: message,
+                lastActivityAt: nil
+            )
+        }
     }
 
     private func applyAccountStates() {

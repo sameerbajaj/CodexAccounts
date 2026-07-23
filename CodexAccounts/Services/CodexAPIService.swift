@@ -261,7 +261,8 @@ enum CodexAPIService {
                 logger.info("Usage fetch succeeded for [\(accountTag, privacy: .private)] HTTP \(http.statusCode) - Primary window: \(usage.primaryWindowSeconds ?? 0)s used: \(usage.usedPercent)% allowed: \(usage.allowed ?? true)")
                 return usage
             } catch {
-                logger.error("Usage fetch JSON decode failed for [\(accountTag, privacy: .private)]")
+                let topKeys = (try? JSONSerialization.jsonObject(with: data) as? [String: Any])?.keys.sorted().joined(separator: ", ") ?? "none"
+                logger.error("Usage fetch JSON decode failed for [\(accountTag, privacy: .private)] HTTP \(http.statusCode) - Error: \(error.localizedDescription) - Keys: [\(topKeys)]")
                 throw APIError.invalidResponse
             }
         case 401:
