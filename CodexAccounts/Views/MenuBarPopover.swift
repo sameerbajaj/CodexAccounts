@@ -56,11 +56,24 @@ struct MenuBarPopover: View {
                 .background(theme.divider)
             footer
         }
-        .frame(width: 340)
+        .frame(width: 360, height: popoverHeight)
         .background(theme.surfacePrimary)
         .environment(\.colorScheme, viewModel.selectedTheme.preferredColorScheme)
         .preferredColorScheme(viewModel.selectedTheme.preferredColorScheme)
         .task { viewModel.setup() }
+    }
+
+    private var popoverHeight: CGFloat {
+        switch selectedTab {
+        case .accounts:
+            if viewModel.showingAddAccount || viewModel.accounts.isEmpty {
+                return 440
+            }
+            let calculated = CGFloat(viewModel.accounts.count * 108 + 150)
+            return min(640, max(480, calculated))
+        case .settings:
+            return 520
+        }
     }
 
     // MARK: - Accounts Tab Content
