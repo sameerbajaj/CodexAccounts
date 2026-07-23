@@ -1,5 +1,7 @@
 # AI assistant instructions (local only)
 .github/copilot-instructions.md
+AGENTS.md
+CLAUDE.md
 
 # macOS
 .DS_Store

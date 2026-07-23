@@ -11,12 +11,14 @@ import Foundation
 
 struct CodexUsageResponse: Decodable {
     let planType: String?
+    let rateLimitReachedType: String?
     let rateLimit: RateLimitDetails?
     let spendControl: SpendControlDetails?
     let credits: CreditDetails?
 
     enum CodingKeys: String, CodingKey {
         case planType = "plan_type"
+        case rateLimitReachedType = "rate_limit_reached_type"
         case rateLimit = "rate_limit"
         case spendControl = "spend_control"
         case credits
@@ -152,7 +154,7 @@ extension AccountUsage {
         let rateLimit = response.rateLimit
         let allowed = rateLimit?.allowed
         let limitReached = rateLimit?.limitReached
-        let rateLimitReachedType = rateLimit?.rateLimitReachedType
+        let rateLimitReachedType = response.rateLimitReachedType ?? rateLimit?.rateLimitReachedType
 
         func makeWindow(from snapshot: CodexUsageResponse.WindowSnapshot?) -> UsageWindow? {
             guard let snapshot else { return nil }

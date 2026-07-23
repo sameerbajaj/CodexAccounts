@@ -258,20 +258,20 @@ enum CodexAPIService {
             do {
                 let usageResponse = try JSONDecoder().decode(CodexUsageResponse.self, from: data)
                 let usage = AccountUsage(from: usageResponse, previous: previous)
-                logger.info("Usage fetch succeeded for [\(accountTag, privacy: .public)] HTTP \(http.statusCode) - Primary window: \(usage.primaryWindowSeconds ?? 0)s used: \(usage.usedPercent)% allowed: \(usage.allowed ?? true)")
+                logger.info("Usage fetch succeeded for [\(accountTag, privacy: .private)] HTTP \(http.statusCode) - Primary window: \(usage.primaryWindowSeconds ?? 0)s used: \(usage.usedPercent)% allowed: \(usage.allowed ?? true)")
                 return usage
             } catch {
-                logger.error("Usage fetch JSON decode failed for [\(accountTag, privacy: .public)]")
+                logger.error("Usage fetch JSON decode failed for [\(accountTag, privacy: .private)]")
                 throw APIError.invalidResponse
             }
         case 401:
-            logger.warning("Usage fetch 401 unauthorized for [\(accountTag, privacy: .public)]")
+            logger.warning("Usage fetch 401 unauthorized for [\(accountTag, privacy: .private)]")
             throw APIError.unauthorized
         case 403:
-            logger.error("Usage fetch 403 forbidden for [\(accountTag, privacy: .public)]")
+            logger.error("Usage fetch 403 forbidden for [\(accountTag, privacy: .private)]")
             throw APIError.serverError(http.statusCode, responseErrorText(from: data))
         default:
-            logger.error("Usage fetch error HTTP \(http.statusCode) for [\(accountTag, privacy: .public)]")
+            logger.error("Usage fetch error HTTP \(http.statusCode) for [\(accountTag, privacy: .private)]")
             throw APIError.serverError(http.statusCode, responseErrorText(from: data))
         }
     }
