@@ -656,16 +656,8 @@ struct CodexAccountsTests {
 
     @Test func testUsageErrorForcesStateRowVisibility() async throws {
         let usageWithError = AccountUsage(
-            usedPercent: 0,
-            resetAt: nil,
-            primaryWindowSeconds: nil,
-            weeklyUsedPercent: nil,
-            weeklyResetAt: nil,
-            weeklyWindowSeconds: nil,
-            creditsBalance: nil,
-            hasCredits: false,
-            isUnlimited: false,
-            lastUpdated: Date(),
+            primaryWindow: nil,
+            secondaryWindow: nil,
             error: "Token expired. Please re-authenticate."
         )
 
