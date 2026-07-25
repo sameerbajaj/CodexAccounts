@@ -18,6 +18,7 @@ struct AccountCardView: View {
     let onTestMessage: () -> Void
     let onDismissTestResult: () -> Void
     let onSetWeeklyAutoKickOverride: (WeeklyAutoKickOverride) -> Void
+    let onRetryAutoKickActivation: () -> Void
     let isTestingMessage: Bool
     let testResult: TestMessageResult?
     let weeklyAutoKickOverride: WeeklyAutoKickOverride
@@ -74,7 +75,11 @@ struct AccountCardView: View {
             Button(action: onRefresh) {
                 Label("Refresh", systemImage: "arrow.clockwise")
             }
-            Menu("Weekly Auto-Kick") {
+            Menu("Auto-Kick / Activation") {
+                Button(action: onRetryAutoKickActivation) {
+                    Label("Retry activation now", systemImage: "bolt.arrow.trianglehead.clockwise")
+                }
+                Divider()
                 Button(action: { onSetWeeklyAutoKickOverride(.inherit) }) {
                     HStack {
                         Text("Use Global Setting")
@@ -146,6 +151,10 @@ struct AccountCardView: View {
                     Label("Refresh", systemImage: "arrow.clockwise")
                 }
                 Menu("Auto-Kick / Activation") {
+                    Button(action: onRetryAutoKickActivation) {
+                        Label("Retry activation now", systemImage: "bolt.arrow.trianglehead.clockwise")
+                    }
+                    Divider()
                     Button(action: { onSetWeeklyAutoKickOverride(.inherit) }) {
                         HStack {
                             Text("Use Global Setting")

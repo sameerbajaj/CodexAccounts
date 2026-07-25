@@ -336,6 +336,7 @@ final class AccountsViewModel {
         hasSetup = true
 
         accounts = deduplicatedAccounts(AccountStore.load().map(normalizedAccountOnLoad))
+        resetMigrationFailuresIfNeeded()
         normalizePinnedOrder()
         applyAccountStates()
         persistAccounts()
@@ -343,6 +344,7 @@ final class AccountsViewModel {
 
         if accounts.isEmpty, let account = CodexAPIService.readAuthFile() {
             accounts.append(normalizedAccountOnLoad(account))
+            resetMigrationFailuresIfNeeded()
             persistAccounts()
             detectedUntrackedEmail = nil
         }
@@ -351,8 +353,6 @@ final class AccountsViewModel {
         startAuthFileSync()
         startAutoRefresh()
         startTokenAudit()
-        startWeeklyAutoKickTimer()
-
         Task {
             await auditAllSessions(trigger: .startup)
             await refreshAll(trigger: .manualRefresh)
@@ -361,6 +361,29 @@ final class AccountsViewModel {
 
         if autoCheckUpdatesOnLaunch {
             Task { await checkForUpdates(showUpToDateFeedback: false) }
+        }
+    }
+
+    private func resetMigrationFailuresIfNeeded() {
+        let migrationFailures = [
+            "Usage did not refresh after auto-kick",
+            "Usage did not include a weekly reset after auto-kick",
+            "Usage did not refresh during reset anchor verification",
+            "Weekly window still looks stale"
+        ]
+
+        var didChange = false
+        for idx in accounts.indices {
+            if let failure = accounts[idx].lastWeeklyAutoKickFailure,
+               migrationFailures.contains(failure) {
+                accounts[idx].lastWeeklyAutoKickFailure = nil
+                accounts[idx].weeklyAutoKickAttemptCount = 0
+                accounts[idx].lastWeeklyAutoKickAttemptAt = nil
+                didChange = true
+            }
+        }
+        if didChange {
+            persistAccounts()
         }
     }
 
@@ -993,8 +1016,9 @@ final class AccountsViewModel {
     func weeklyAutoKickIndicator(for account: CodexAccount, usage: AccountUsage?) -> WeeklyAutoKickIndicator? {
         let current = currentAccount(id: account.id) ?? account
         let now = Date()
+        let windowName = usage?.activatableWindow?.displayLabel ?? "Window"
 
-        if let usage, !usage.hasWeeklyWindow {
+        if let usage, !usage.hasActivatableWindow {
             return nil
         }
 
@@ -1017,7 +1041,7 @@ final class AccountsViewModel {
                 return WeeklyAutoKickIndicator(
                     symbol: "bolt.trianglebadge.exclamationmark.fill",
                     color: .orange,
-                    help: "Weekly auto-kick failed this cycle: \(weeklyAutoKickFailureHelp(failure))"
+                    help: "Activation failed this cycle: \(weeklyAutoKickFailureHelp(failure))"
                 )
             }
             return nil
@@ -1027,7 +1051,7 @@ final class AccountsViewModel {
             return WeeklyAutoKickIndicator(
                 symbol: "bolt.slash.fill",
                 color: .red,
-                help: "Weekly auto-kick unavailable until re-authenticated"
+                help: "Activation unavailable until re-authenticated"
             )
         }
 
@@ -1035,7 +1059,7 @@ final class AccountsViewModel {
             return WeeklyAutoKickIndicator(
                 symbol: "bolt.slash.fill",
                 color: .orange,
-                help: "Weekly auto-kick paused while refresh is failing"
+                help: "Activation paused while refresh is failing"
             )
         }
 
@@ -1046,13 +1070,13 @@ final class AccountsViewModel {
                         return WeeklyAutoKickIndicator(
                             symbol: "bolt.trianglebadge.exclamationmark.fill",
                             color: .orange,
-                            help: "Weekly auto-kick failed this cycle: \(weeklyAutoKickFailureHelp(failure))"
+                            help: "Activation failed: \(weeklyAutoKickFailureHelp(failure))"
                         )
                     }
                     return WeeklyAutoKickIndicator(
                         symbol: "bolt.trianglebadge.exclamationmark.fill",
                         color: .orange,
-                        help: "Weekly auto-kick failed this cycle"
+                        help: "Activation paused after \(weeklyAutoKickMaxAttempts) attempts"
                     )
                 }
 
@@ -1061,32 +1085,32 @@ final class AccountsViewModel {
                 return WeeklyAutoKickIndicator(
                     symbol: "bolt.circle.fill",
                     color: .cyan,
-                    help: "Weekly auto-kick attempt \(current.weeklyAutoKickAttemptCount)/\(weeklyAutoKickMaxAttempts)\(retrySuffix)"
+                    help: "Activation attempt \(current.weeklyAutoKickAttemptCount)/\(weeklyAutoKickMaxAttempts)\(retrySuffix)"
                 )
             }
 
-            if usage.weeklyResetIsOverdue(now: now, grace: weeklyAutoKickDelay) {
+            if usage.activatableResetIsOverdue(now: now, grace: weeklyAutoKickDelay) {
                 return WeeklyAutoKickIndicator(
                     symbol: "bolt.circle.fill",
                     color: .cyan,
-                    help: "Weekly auto-kick is actively watching this overdue weekly reset"
+                    help: "\(windowName) window awaiting activation"
                 )
             }
 
-            if let weeklyResetAt = usage.weeklyResetAt {
-                let secondsUntilReset = weeklyResetAt.timeIntervalSince(now)
+            if let resetAt = usage.activatableResetAt {
+                let secondsUntilReset = resetAt.timeIntervalSince(now)
                 if secondsUntilReset <= weeklyAutoKickSoonThreshold {
                     return WeeklyAutoKickIndicator(
                         symbol: "bolt.circle",
                         color: .cyan.opacity(0.95),
-                        help: "Weekly auto-kick is watching closely before reset"
+                        help: "Watching closely before \(windowName) reset"
                     )
                 }
                 if secondsUntilReset <= weeklyAutoKickNearResetThreshold {
                     return WeeklyAutoKickIndicator(
                         symbol: "bolt.circle",
                         color: .blue.opacity(0.95),
-                        help: "Weekly auto-kick is armed for this account and will ramp up closer to reset"
+                        help: "Armed for \(windowName) reset"
                     )
                 }
             }
@@ -1094,12 +1118,12 @@ final class AccountsViewModel {
 
         if let successAt = current.lastWeeklyAutoKickSuccessAt,
            let usage,
-           usage.weeklyCycleIdentifier == current.lastWeeklyAutoKickCycleID
+           usage.activatableCycleIdentifier == current.lastWeeklyAutoKickCycleID
         {
             return WeeklyAutoKickIndicator(
                 symbol: "bolt.badge.checkmark",
                 color: .green,
-                help: "Weekly auto-kick activated \(successAt.relativeDescription)"
+                help: "Activated \(successAt.relativeDescription)"
             )
         }
 
@@ -1108,7 +1132,7 @@ final class AccountsViewModel {
             return WeeklyAutoKickIndicator(
                 symbol: "bolt.badge.checkmark",
                 color: .green.opacity(0.95),
-                help: "Weekly auto-kick is enabled for this account"
+                help: "Auto-kick activation is enabled for this account"
             )
         case .forceOff:
             return nil
@@ -1121,17 +1145,33 @@ final class AccountsViewModel {
                     ? WeeklyAutoKickIndicator(
                         symbol: "bolt.badge.checkmark",
                         color: .green.opacity(0.95),
-                        help: "Weekly auto-kick follows the pinned-accounts setting"
+                        help: "Auto-kick activation is enabled (pinned account)"
                     )
                     : nil
             case .allAccounts:
                 return WeeklyAutoKickIndicator(
                     symbol: "bolt.badge.checkmark",
                     color: .green.opacity(0.95),
-                    help: "Weekly auto-kick follows the global setting"
+                    help: "Auto-kick activation is enabled (all accounts)"
                 )
             }
         }
+    }
+
+    func retryAutoKickActivation(for account: CodexAccount) async {
+        guard let idx = accounts.firstIndex(where: { $0.id == account.id }) else { return }
+        accounts[idx].weeklyAutoKickAttemptCount = 0
+        accounts[idx].lastWeeklyAutoKickFailure = nil
+        accounts[idx].lastWeeklyAutoKickAttemptAt = nil
+        persistAccounts()
+
+        let cycleID = usageData[account.id]?.activatableCycleIdentifier ?? slidingWeeklyResetCycleIdentifier(now: Date())
+        await runWeeklyAutoKickAttempt(
+            for: accounts[idx],
+            cycleID: cycleID,
+            now: Date(),
+            verifyAnchoredReset: true
+        )
     }
 
     private func slidingWeeklyResetIndicator(
@@ -1485,7 +1525,7 @@ final class AccountsViewModel {
         try? await Task.sleep(for: .seconds(weeklyAutoKickActivationDelay))
         await refreshAccount(attemptAccount, trigger: .timer)
 
-        guard var updatedUsage = usageData[account.id], updatedUsage.hasWeeklyWindow else {
+        guard var updatedUsage = usageData[account.id], updatedUsage.hasActivatableWindow else {
             recordWeeklyAutoKickFailure(for: account.id, message: "Usage did not refresh after auto-kick")
             if let updatedAccount = currentAccount(id: account.id) {
                 scheduleRetryWeeklyAutoKickCheck(for: account.id, account: updatedAccount, now: now)
@@ -1493,8 +1533,8 @@ final class AccountsViewModel {
             return
         }
 
-        if updatedUsage.weeklyResetIsOverdue(grace: weeklyResetDisplayGrace) {
-            recordWeeklyAutoKickFailure(for: account.id, message: "Weekly window still looks stale")
+        if updatedUsage.activatableResetIsOverdue(grace: weeklyResetDisplayGrace) {
+            recordWeeklyAutoKickFailure(for: account.id, message: "Activation window still looks stale")
             if let updatedAccount = currentAccount(id: account.id) {
                 scheduleRetryWeeklyAutoKickCheck(for: account.id, account: updatedAccount, now: now)
             }
@@ -1502,8 +1542,8 @@ final class AccountsViewModel {
         }
 
         if verifyAnchoredReset {
-            guard let firstResetAt = updatedUsage.weeklyResetAt else {
-                recordWeeklyAutoKickFailure(for: account.id, message: "Usage did not include a weekly reset after auto-kick")
+            guard let firstResetAt = updatedUsage.activatableResetAt else {
+                recordWeeklyAutoKickFailure(for: account.id, message: "Usage did not include an active reset after auto-kick")
                 if let updatedAccount = currentAccount(id: account.id) {
                     scheduleRetryWeeklyAutoKickCheck(for: account.id, account: updatedAccount, now: now)
                 }
@@ -1514,7 +1554,7 @@ final class AccountsViewModel {
             try? await Task.sleep(for: .seconds(slidingWeeklyResetVerificationDelay))
             await refreshAccount(currentAccount(id: account.id) ?? attemptAccount, trigger: .timer)
 
-            guard let verifiedUsage = usageData[account.id], verifiedUsage.hasWeeklyWindow else {
+            guard let verifiedUsage = usageData[account.id], verifiedUsage.hasActivatableWindow else {
                 recordWeeklyAutoKickFailure(for: account.id, message: "Usage did not refresh during reset anchor verification")
                 if let updatedAccount = currentAccount(id: account.id) {
                     scheduleRetryWeeklyAutoKickCheck(for: account.id, account: updatedAccount, now: now)
@@ -1523,18 +1563,19 @@ final class AccountsViewModel {
             }
 
             let verifiedAt = Date()
+            let verifiedRemaining = weeklyRemainingPercent(for: verifiedUsage) ?? verifiedUsage.remainingPercent
             let stillSliding = AccountsViewModel.weeklyResetAppearsSliding(
                 previousResetAt: firstResetAt,
                 previousObservedAt: firstObservedAt,
-                currentResetAt: verifiedUsage.weeklyResetAt,
+                currentResetAt: verifiedUsage.activatableResetAt,
                 currentObservedAt: verifiedAt,
-                weeklyWindowSeconds: verifiedUsage.weeklyWindowSeconds,
-                remainingPercent: weeklyRemainingPercent(for: verifiedUsage),
+                weeklyWindowSeconds: verifiedUsage.activatableWindowSeconds,
+                remainingPercent: verifiedRemaining,
                 minimumRemainingPercent: slidingWeeklyResetMinimumRemaining
             )
 
-            if stillSliding {
-                recordWeeklyAutoKickFailure(for: account.id, message: "Weekly reset timer still looks unanchored")
+            if verifiedRemaining >= 100 && stillSliding {
+                recordWeeklyAutoKickFailure(for: account.id, message: "Reset timer still looks unanchored")
                 if let updatedAccount = currentAccount(id: account.id) {
                     scheduleRetryWeeklyAutoKickCheck(for: account.id, account: updatedAccount, now: now)
                 }
@@ -1662,7 +1703,7 @@ final class AccountsViewModel {
     private func syncWeeklyObservation(for accountID: String, usage: AccountUsage) {
         guard let idx = accounts.firstIndex(where: { $0.id == accountID }) else { return }
 
-        let observedResetAt = usage.weeklyResetAt
+        let observedResetAt = usage.activatableResetAt
         let previousObservedResetAt = accounts[idx].lastObservedWeeklyResetAt
         guard observedResetAt != previousObservedResetAt else { return }
 
@@ -1687,9 +1728,9 @@ final class AccountsViewModel {
         let isSliding = AccountsViewModel.weeklyResetAppearsSliding(
             previousResetAt: account.lastObservedWeeklyResetAt,
             previousObservedAt: account.lastSuccessfulUsageAt,
-            currentResetAt: usage.weeklyResetAt,
+            currentResetAt: usage.activatableResetAt,
             currentObservedAt: observedAt,
-            weeklyWindowSeconds: usage.weeklyWindowSeconds,
+            weeklyWindowSeconds: usage.activatableWindowSeconds,
             remainingPercent: weeklyRemainingPercent(for: usage),
             minimumRemainingPercent: slidingWeeklyResetMinimumRemaining
         )
@@ -1743,12 +1784,12 @@ final class AccountsViewModel {
             return
         }
 
-        guard let weeklyResetAt = usage.weeklyResetAt else {
+        guard let activatableResetAt = usage.activatableResetAt else {
             weeklyAutoKickNextCheckAt.removeValue(forKey: accountID)
             return
         }
 
-        let secondsUntilReset = weeklyResetAt.timeIntervalSince(now)
+        let secondsUntilReset = activatableResetAt.timeIntervalSince(now)
         let nextCheckAt: Date
 
         if slidingWeeklyResetAccountIDs.contains(accountID) {
@@ -1756,7 +1797,7 @@ final class AccountsViewModel {
         } else if secondsUntilReset <= -weeklyAutoKickDelay {
             nextCheckAt = now.addingTimeInterval(weeklyAutoKickInterval)
         } else if secondsUntilReset <= 0 {
-            nextCheckAt = weeklyResetAt.addingTimeInterval(weeklyAutoKickDelay)
+            nextCheckAt = activatableResetAt.addingTimeInterval(weeklyAutoKickDelay)
         } else if secondsUntilReset <= weeklyAutoKickSoonThreshold {
             nextCheckAt = now.addingTimeInterval(weeklyAutoKickSoonInterval)
         } else if secondsUntilReset <= weeklyAutoKickNearResetThreshold {
@@ -1783,7 +1824,7 @@ final class AccountsViewModel {
 
     private func rebuildWeeklyAutoKickSchedule(now: Date = Date()) {
         for account in accounts {
-            guard let usage = usageData[account.id], usage.hasWeeklyWindow else {
+            guard let usage = usageData[account.id], usage.hasActivatableWindow else {
                 weeklyAutoKickNextCheckAt.removeValue(forKey: account.id)
                 continue
             }

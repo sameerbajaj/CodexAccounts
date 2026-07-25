@@ -587,6 +587,66 @@ struct CodexAccountsTests {
         #expect(newUsage.lastUpdated > initialUsage.lastUpdated)
     }
 
+    @Test func monthlySlidingWindowSchedulesActivation() async throws {
+        let viewModel = AccountsViewModel()
+        let account = makeAccount(weeklyAutoKickOverride: .forceOn)
+        let resetAt = Date().addingTimeInterval(2592000)
+        let usage = AccountUsage(
+            primaryWindow: UsageWindow(
+                usedPercent: 0,
+                resetAt: resetAt,
+                windowDurationSeconds: 2592000,
+                kind: .monthly
+            ),
+            secondaryWindow: nil
+        )
+
+        viewModel.accounts = [account]
+        viewModel.usageData[account.id] = usage
+
+        #expect(usage.hasActivatableWindow)
+        #expect(!usage.hasWeeklyWindow)
+        let indicator = viewModel.weeklyAutoKickIndicator(for: account, usage: usage)
+        #expect(indicator != nil)
+    }
+
+    @Test func knownMigrationFailureResetsCapOnce() async throws {
+        let viewModel = AccountsViewModel()
+        var account = makeAccount(weeklyAutoKickOverride: .forceOn)
+        account.lastWeeklyAutoKickFailure = "Usage did not refresh after auto-kick"
+        account.weeklyAutoKickAttemptCount = 3
+        account.lastWeeklyAutoKickAttemptAt = Date()
+
+        viewModel.accounts = [account]
+        viewModel.setup()
+
+        let updated = viewModel.accounts.first(where: { $0.id == account.id })
+        #expect(updated?.lastWeeklyAutoKickFailure == nil)
+        #expect(updated?.weeklyAutoKickAttemptCount == 0)
+    }
+
+    @Test func monthlyOverdueActivationIndicatorDisplaysStatus() async throws {
+        let viewModel = AccountsViewModel()
+        let account = makeAccount(weeklyAutoKickOverride: .forceOn)
+        let overdueReset = Date().addingTimeInterval(-300)
+        let usage = AccountUsage(
+            primaryWindow: UsageWindow(
+                usedPercent: 0,
+                resetAt: overdueReset,
+                windowDurationSeconds: 2592000,
+                kind: .monthly
+            )
+        )
+
+        viewModel.accounts = [account]
+        viewModel.usageData[account.id] = usage
+
+        let indicator = viewModel.weeklyAutoKickIndicator(for: account, usage: usage)
+        #expect(indicator != nil)
+        #expect(indicator?.help.contains("30-day") == true)
+        #expect(indicator?.help.contains("awaiting activation") == true)
+    }
+
     private func makeAccount(
         email: String = "test@example.com",
         lastSuccessfulTokenRefreshAt: Date? = nil,

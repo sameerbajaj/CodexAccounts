@@ -516,13 +516,13 @@ struct AccountUsage: Equatable {
 
     var activatableWindow: UsageWindow? {
         if let weekly = weeklyWindow { return weekly }
-        if let prim = primaryWindow, (prim.kind == .monthly || prim.windowDurationSeconds >= AccountUsage.weeklyWindowThresholdSeconds) {
+        if let prim = primaryWindow, (prim.kind == .monthly || prim.kind == .weekly || prim.windowDurationSeconds >= AccountUsage.weeklyWindowThresholdSeconds) {
             return prim
         }
-        if let sec = secondaryWindow, (sec.kind == .monthly || sec.windowDurationSeconds >= AccountUsage.weeklyWindowThresholdSeconds) {
+        if let sec = secondaryWindow, (sec.kind == .monthly || sec.kind == .weekly || sec.windowDurationSeconds >= AccountUsage.weeklyWindowThresholdSeconds) {
             return sec
         }
-        return additionalWindows.first(where: { $0.kind == .monthly || $0.windowDurationSeconds >= AccountUsage.weeklyWindowThresholdSeconds })
+        return additionalWindows.first(where: { $0.kind == .monthly || $0.kind == .weekly || $0.windowDurationSeconds >= AccountUsage.weeklyWindowThresholdSeconds })
     }
 
     var hasActivatableWindow: Bool { activatableWindow != nil }
