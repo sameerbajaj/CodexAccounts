@@ -27,6 +27,8 @@ struct AccountCardView: View {
     @State private var isHovering = false
 
     private var showStateRow: Bool {
+        if let usage, usage.error != nil { return true }
+        if usage?.primaryWindow == nil { return true }
         if case .active = status, account.authState == .healthy { return false }
         return true
     }
@@ -118,79 +120,86 @@ struct AccountCardView: View {
                 .foregroundStyle(theme.textPrimary)
                 .lineLimit(1)
                 .truncationMode(.middle)
+                .layoutPriority(1)
 
-            if account.isPinned {
-                Image(systemName: "pin.fill")
-                    .font(.system(size: 9))
-                    .foregroundStyle(theme.pinnedAccent)
-                    .rotationEffect(.degrees(45))
-                    .help("Pinned account")
+            Spacer(minLength: AppSpacing.xs)
+
+            HStack(spacing: 6) {
+                if account.isPinned {
+                    Image(systemName: "pin.fill")
+                        .font(.system(size: 9))
+                        .foregroundStyle(theme.pinnedAccent)
+                        .rotationEffect(.degrees(45))
+                        .help("Pinned account")
+                }
+
+                if let indicator = weeklyAutoKickIndicator {
+                    Image(systemName: indicator.symbol)
+                        .font(.system(size: 9, weight: .bold))
+                        .foregroundStyle(indicator.color)
+                        .help(indicator.help)
+                }
+
+                planBadge
+
+                overflowMenu
             }
+        }
+    }
 
-            if let indicator = weeklyAutoKickIndicator {
-                Image(systemName: indicator.symbol)
-                    .font(.system(size: 9, weight: .bold))
-                    .foregroundStyle(indicator.color)
-                    .help(indicator.help)
+    private var overflowMenu: some View {
+        Menu {
+            Button(action: onTogglePin) {
+                Label(account.isPinned ? "Unpin" : "Pin to top",
+                      systemImage: account.isPinned ? "pin.slash" : "pin")
             }
-
-            Spacer()
-
-            planBadge
-
-            Menu {
-                Button(action: onTogglePin) {
-                    Label(account.isPinned ? "Unpin" : "Pin to top",
-                          systemImage: account.isPinned ? "pin.slash" : "pin")
-                }
-                Button(action: onTestMessage) {
-                    Label("Send test message", systemImage: "paperplane")
-                }
-                .disabled(isTestingMessage)
-                Button(action: onRefresh) {
-                    Label("Refresh", systemImage: "arrow.clockwise")
-                }
-                Menu("Auto-Kick / Activation") {
-                    Button(action: onRetryAutoKickActivation) {
-                        Label("Retry activation now", systemImage: "bolt.arrow.trianglehead.clockwise")
-                    }
-                    Divider()
-                    Button(action: { onSetWeeklyAutoKickOverride(.inherit) }) {
-                        HStack {
-                            Text("Use Global Setting")
-                            if weeklyAutoKickOverride == .inherit { Image(systemName: "checkmark") }
-                        }
-                    }
-                    Button(action: { onSetWeeklyAutoKickOverride(.forceOn) }) {
-                        HStack {
-                            Text("Always Enable for This Account")
-                            if weeklyAutoKickOverride == .forceOn { Image(systemName: "checkmark") }
-                        }
-                    }
-                    Button(action: { onSetWeeklyAutoKickOverride(.forceOff) }) {
-                        HStack {
-                            Text("Always Disable for This Account")
-                            if weeklyAutoKickOverride == .forceOff { Image(systemName: "checkmark") }
-                        }
-                    }
+            Button(action: onTestMessage) {
+                Label("Send test message", systemImage: "paperplane")
+            }
+            .disabled(isTestingMessage)
+            Button(action: onRefresh) {
+                Label("Refresh", systemImage: "arrow.clockwise")
+            }
+            Menu("Auto-Kick / Activation") {
+                Button(action: onRetryAutoKickActivation) {
+                    Label("Retry activation now", systemImage: "bolt.arrow.trianglehead.clockwise")
                 }
                 Divider()
-                Button(action: onReauth) {
-                    Label("Re-authenticate…", systemImage: "arrow.triangle.2.circlepath")
+                Button(action: { onSetWeeklyAutoKickOverride(.inherit) }) {
+                    HStack {
+                        Text("Use Global Setting")
+                        if weeklyAutoKickOverride == .inherit { Image(systemName: "checkmark") }
+                    }
                 }
-                Button(role: .destructive, action: onRemove) {
-                    Label("Remove Account", systemImage: "trash")
+                Button(action: { onSetWeeklyAutoKickOverride(.forceOn) }) {
+                    HStack {
+                        Text("Always Enable for This Account")
+                        if weeklyAutoKickOverride == .forceOn { Image(systemName: "checkmark") }
+                    }
                 }
-            } label: {
-                Image(systemName: "ellipsis")
-                    .font(.system(size: 12))
-                    .foregroundStyle(theme.textTertiary)
+                Button(action: { onSetWeeklyAutoKickOverride(.forceOff) }) {
+                    HStack {
+                        Text("Always Disable for This Account")
+                        if weeklyAutoKickOverride == .forceOff { Image(systemName: "checkmark") }
+                    }
+                }
             }
-            .menuStyle(.borderlessButton)
-            .menuIndicator(.hidden)
-            .opacity(isHovering ? 1 : 0)
-            .animation(.easeInOut(duration: AppAnimation.quick), value: isHovering)
+            Divider()
+            Button(action: onReauth) {
+                Label("Re-authenticate…", systemImage: "arrow.triangle.2.circlepath")
+            }
+            Button(role: .destructive, action: onRemove) {
+                Label("Remove Account", systemImage: "trash")
+            }
+        } label: {
+            Image(systemName: "ellipsis")
+                .font(.system(size: 12))
+                .foregroundStyle(theme.textTertiary)
         }
+        .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
+        .opacity(isHovering ? 1 : 0)
+        .animation(.easeInOut(duration: AppAnimation.quick), value: isHovering)
     }
 
     // MARK: - Plan Badge
@@ -236,6 +245,9 @@ struct AccountCardView: View {
     }
 
     private var statusIcon: String {
+        if usage?.error != nil || usage?.primaryWindow == nil {
+            return "exclamationmark.triangle"
+        }
         switch status {
         case .refreshing: return "arrow.clockwise"
         case .stale: return "clock.badge.exclamationmark"
@@ -247,6 +259,9 @@ struct AccountCardView: View {
     }
 
     private var statusColor: Color {
+        if usage?.error != nil || usage?.primaryWindow == nil {
+            return theme.warningOrange
+        }
         switch status {
         case .refreshing: return theme.accentPrimary
         case .stale: return theme.warningOrange
@@ -258,6 +273,12 @@ struct AccountCardView: View {
     }
 
     private var statusMessage: String {
+        if let err = usage?.error, !err.isEmpty {
+            return err
+        }
+        if usage?.primaryWindow == nil {
+            return "Authentication or rate limit unavailable"
+        }
         switch status {
         case .refreshing: return "Refreshing usage data…"
         case .stale: return "Session data stale"
@@ -269,6 +290,7 @@ struct AccountCardView: View {
     }
 
     private var showReauthButton: Bool {
+        if usage?.error != nil || usage?.primaryWindow == nil { return true }
         if case .needsReauth = status { return true }
         if case .degraded = status { return true }
         return account.authState == .needsReauth

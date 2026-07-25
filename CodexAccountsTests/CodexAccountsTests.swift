@@ -654,6 +654,34 @@ struct CodexAccountsTests {
         #expect(indicator?.help.contains("awaiting activation") == true)
     }
 
+    @Test func testUsageErrorForcesStateRowVisibility() async throws {
+        let usageWithError = AccountUsage(
+            usedPercent: 0,
+            resetAt: nil,
+            primaryWindowSeconds: nil,
+            weeklyUsedPercent: nil,
+            weeklyResetAt: nil,
+            weeklyWindowSeconds: nil,
+            creditsBalance: nil,
+            hasCredits: false,
+            isUnlimited: false,
+            lastUpdated: Date(),
+            error: "Token expired. Please re-authenticate."
+        )
+
+        #expect(usageWithError.error != nil)
+        #expect(usageWithError.primaryWindow == nil)
+    }
+
+    @Test func testNilPrimaryWindowForcesStateRowVisibility() async throws {
+        let usageNoPrimary = AccountUsage(
+            primaryWindow: nil,
+            secondaryWindow: nil
+        )
+
+        #expect(usageNoPrimary.primaryWindow == nil)
+    }
+
     private func makeAccount(
         email: String = "test@example.com",
         lastSuccessfulTokenRefreshAt: Date? = nil,

@@ -63,16 +63,20 @@ struct MenuBarPopover: View {
         .task { viewModel.setup() }
     }
 
+    private var accountsHeight: CGFloat {
+        if viewModel.showingAddAccount || viewModel.accounts.isEmpty {
+            return 440
+        }
+        let calculated = CGFloat(viewModel.accounts.count * 108 + 150)
+        return min(640, max(480, calculated))
+    }
+
     private var popoverHeight: CGFloat {
         switch selectedTab {
         case .accounts:
-            if viewModel.showingAddAccount || viewModel.accounts.isEmpty {
-                return 440
-            }
-            let calculated = CGFloat(viewModel.accounts.count * 108 + 150)
-            return min(640, max(480, calculated))
+            return accountsHeight
         case .settings:
-            return 520
+            return max(640, accountsHeight)
         }
     }
 
