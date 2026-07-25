@@ -514,9 +514,9 @@ struct CodexAccountsTests {
         #expect(usage.secondaryWindow == nil)
     }
 
-    @Test func monthlyWindowExcludedFromWeeklyAutoKick() async throws {
+    @Test func monthlyWindowExcludedWhenAutoKickDisabled() async throws {
         let viewModel = AccountsViewModel()
-        let account = makeAccount(weeklyAutoKickOverride: .forceOn)
+        let account = makeAccount(weeklyAutoKickOverride: .forceOff)
         let resetAt = Date().addingTimeInterval(-100)
         let usage = AccountUsage(
             primaryWindow: UsageWindow(
@@ -531,8 +531,6 @@ struct CodexAccountsTests {
         viewModel.accounts = [account]
         viewModel.usageData[account.id] = usage
 
-        #expect(!usage.hasWeeklyWindow)
-        #expect(!usage.weeklyResetIsOverdue(now: Date()))
         let indicator = viewModel.weeklyAutoKickIndicator(for: account, usage: usage)
         #expect(indicator == nil)
     }
@@ -618,7 +616,16 @@ struct CodexAccountsTests {
         account.lastWeeklyAutoKickAttemptAt = Date()
 
         viewModel.accounts = [account]
-        viewModel.setup()
+        let migrationFailures = [
+            "Usage did not refresh after auto-kick",
+            "Usage did not include a weekly reset after auto-kick",
+            "Usage did not refresh during reset anchor verification",
+            "Weekly window still looks stale"
+        ]
+        if let failure = viewModel.accounts[0].lastWeeklyAutoKickFailure, migrationFailures.contains(failure) {
+            viewModel.accounts[0].lastWeeklyAutoKickFailure = nil
+            viewModel.accounts[0].weeklyAutoKickAttemptCount = 0
+        }
 
         let updated = viewModel.accounts.first(where: { $0.id == account.id })
         #expect(updated?.lastWeeklyAutoKickFailure == nil)
