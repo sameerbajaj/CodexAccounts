@@ -304,6 +304,7 @@ struct MenuBarPopover: View {
                             onDismissTestResult: { viewModel.dismissTestResult(account.id) },
                             onSetWeeklyAutoKickOverride: { viewModel.setWeeklyAutoKickOverride($0, for: account) },
                             onRetryAutoKickActivation: { Task { await viewModel.retryAutoKickActivation(for: account) } },
+                            onRunDiagnosticExperiment: { exp in Task { await viewModel.runDiagnosticExperiment(for: account, experiment: exp) } },
                             isTestingMessage: viewModel.testMessageLoading.contains(account.id),
                             testResult: viewModel.testMessageResults[account.id],
                             weeklyAutoKickOverride: viewModel.weeklyAutoKickOverride(for: account),
@@ -623,6 +624,12 @@ struct MenuBarPopover: View {
                 }
                 .padding(AppSpacing.md)
             }
+
+            DiagnosticTraceView(
+                traces: viewModel.diagnosticTraces,
+                theme: theme,
+                onClear: { viewModel.clearDiagnosticTraces() }
+            )
         }
     }
 

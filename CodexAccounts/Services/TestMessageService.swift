@@ -21,6 +21,16 @@ struct TestMessageResult: Equatable {
     }
 }
 
+struct DiagnosticExecutionResult: Equatable {
+    let success: Bool
+    let message: String
+    let deliveryMethod: String
+    let cliVersion: String?
+    let exitCode: Int?
+    let outputMessageProduced: Bool
+    let runRootPath: String?
+}
+
 enum TestMessageService {
     private static let cliTimeout: TimeInterval = 45
     private static let primaryResponsesURL = "https://api.openai.com/v1/responses"
@@ -36,6 +46,61 @@ enum TestMessageService {
 
     static func sendAutoKickActivation(account: CodexAccount) async -> TestMessageResult {
         await send(account: account, prompt: autoKickActivationPrompt, maxOutputTokens: 96)
+    }
+
+    static func fetchCodexVersion() -> String? {
+        guard let codexExecutable = resolveCodexExecutable() else { return nil }
+        let process = Process()
+        let out = Pipe()
+        process.executableURL = URL(fileURLWithPath: codexExecutable)
+        process.arguments = ["--version"]
+        process.environment = ["PATH": "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"]
+        process.standardOutput = out
+        process.standardError = FileHandle.nullDevice
+        do {
+            try process.run()
+            process.waitUntilExit()
+        } catch {
+            return nil
+        }
+        guard process.terminationStatus == 0 else { return nil }
+        let data = out.fileHandleForReading.readDataToEndOfFile()
+        return String(data: data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    static func sendDiagnosticActivation(
+        account: CodexAccount,
+        isEphemeral: Bool,
+        keepRunRoot: Bool
+    ) async -> DiagnosticExecutionResult {
+        let prompt = isEphemeral
+            ? autoKickActivationPrompt
+            : "Confirm this Codex account is active by listing files in the working directory and writing a short confirmation sentence."
+
+        let version = fetchCodexVersion()
+
+        let cliResult = await sendViaCLIDiagnostic(
+            account: account,
+            prompt: prompt,
+            isEphemeral: isEphemeral,
+            keepRunRoot: keepRunRoot,
+            cliVersion: version
+        )
+
+        if cliResult.deliveryMethod == "CLI" && (cliResult.success || !shouldTryAPIAfterCLIFailure(cliResult.message)) {
+            return cliResult
+        }
+
+        let apiResult = await sendViaAPI(account: account, prompt: prompt, maxOutputTokens: 96)
+        return DiagnosticExecutionResult(
+            success: apiResult.success,
+            message: apiResult.message,
+            deliveryMethod: "API",
+            cliVersion: version,
+            exitCode: nil,
+            outputMessageProduced: apiResult.success,
+            runRootPath: nil
+        )
     }
 
     private static func send(
@@ -147,6 +212,153 @@ enum TestMessageService {
             exitCode: Int(process.terminationStatus)
         )
         return .fail(errorText)
+    }
+
+    private static func sendViaCLIDiagnostic(
+        account: CodexAccount,
+        prompt: String,
+        isEphemeral: Bool,
+        keepRunRoot: Bool,
+        cliVersion: String?
+    ) async -> DiagnosticExecutionResult {
+        guard let codexExecutable = resolveCodexExecutable() else {
+            return DiagnosticExecutionResult(
+                success: false,
+                message: "Codex CLI not found. Install Codex or add it to PATH.",
+                deliveryMethod: "CLI",
+                cliVersion: nil,
+                exitCode: nil,
+                outputMessageProduced: false,
+                runRootPath: nil
+            )
+        }
+
+        let fm = FileManager.default
+        let runRoot = fm.temporaryDirectory.appendingPathComponent("CodexAccounts-Test-\(UUID().uuidString)")
+        let codexHome = runRoot.appendingPathComponent(".codex")
+        let authURL = codexHome.appendingPathComponent("auth.json")
+        let outputURL = runRoot.appendingPathComponent("last-message.txt")
+
+        do {
+            try fm.createDirectory(at: codexHome, withIntermediateDirectories: true)
+            try writeCLIAuthFile(account: account, to: authURL)
+        } catch {
+            return DiagnosticExecutionResult(
+                success: false,
+                message: "Failed to prepare CLI auth: \(error.localizedDescription)",
+                deliveryMethod: "CLI",
+                cliVersion: cliVersion,
+                exitCode: nil,
+                outputMessageProduced: false,
+                runRootPath: nil
+            )
+        }
+
+        defer {
+            if !keepRunRoot {
+                try? fm.removeItem(at: runRoot)
+            }
+        }
+
+        let process = Process()
+        let stdoutPipe = Pipe()
+        let stderrPipe = Pipe()
+
+        process.executableURL = URL(fileURLWithPath: codexExecutable)
+        var args = [
+            "exec",
+            "--skip-git-repo-check"
+        ]
+        if isEphemeral {
+            args.append("--ephemeral")
+        }
+        args.append(contentsOf: [
+            "--sandbox", "read-only",
+            "--color", "never",
+            "--output-last-message", outputURL.path,
+            "-C", runRoot.path,
+            prompt
+        ])
+        process.arguments = args
+
+        var env = ProcessInfo.processInfo.environment
+        env["CODEX_HOME"] = codexHome.path
+        env.removeValue(forKey: "OPENAI_API_KEY")
+        env.removeValue(forKey: "OPENAI_ORG_ID")
+        env.removeValue(forKey: "OPENAI_PROJECT_ID")
+        env.removeValue(forKey: "OPENAI_BASE_URL")
+        env["PATH"] = "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
+        process.environment = env
+        process.standardOutput = stdoutPipe
+        process.standardError = stderrPipe
+
+        do {
+            try process.run()
+        } catch {
+            return DiagnosticExecutionResult(
+                success: false,
+                message: "Failed to launch Codex CLI: \(error.localizedDescription)",
+                deliveryMethod: "CLI",
+                cliVersion: cliVersion,
+                exitCode: nil,
+                outputMessageProduced: false,
+                runRootPath: keepRunRoot ? runRoot.path : nil
+            )
+        }
+
+        let finished = await waitForProcess(process, timeout: cliTimeout)
+        if !finished {
+            process.terminate()
+            return DiagnosticExecutionResult(
+                success: false,
+                message: "Codex CLI timed out",
+                deliveryMethod: "CLI",
+                cliVersion: cliVersion,
+                exitCode: -1,
+                outputMessageProduced: false,
+                runRootPath: keepRunRoot ? runRoot.path : nil
+            )
+        }
+
+        let stdout = String(data: stdoutPipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
+        let stderr = String(data: stderrPipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
+        let outputMessage = (try? String(contentsOf: outputURL, encoding: .utf8))?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+
+        let exitCode = Int(process.terminationStatus)
+        let outputProduced = !outputMessage.isEmpty
+
+        if process.terminationStatus == 0 {
+            let msg = outputProduced
+                ? outputMessage
+                : (!stdout.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                    ? stdout.trimmingCharacters(in: .whitespacesAndNewlines)
+                    : "OK")
+            return DiagnosticExecutionResult(
+                success: true,
+                message: msg,
+                deliveryMethod: "CLI",
+                cliVersion: cliVersion,
+                exitCode: exitCode,
+                outputMessageProduced: outputProduced,
+                runRootPath: keepRunRoot ? runRoot.path : nil
+            )
+        }
+
+        let errorText = pickErrorText(
+            outputMessage: outputMessage,
+            stderr: stderr,
+            stdout: stdout,
+            exitCode: exitCode
+        )
+        return DiagnosticExecutionResult(
+            success: false,
+            message: errorText,
+            deliveryMethod: "CLI",
+            cliVersion: cliVersion,
+            exitCode: exitCode,
+            outputMessageProduced: outputProduced,
+            runRootPath: keepRunRoot ? runRoot.path : nil
+        )
     }
 
     private static func resolveCodexExecutable() -> String? {

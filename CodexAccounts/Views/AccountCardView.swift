@@ -19,6 +19,7 @@ struct AccountCardView: View {
     let onDismissTestResult: () -> Void
     let onSetWeeklyAutoKickOverride: (WeeklyAutoKickOverride) -> Void
     let onRetryAutoKickActivation: () -> Void
+    let onRunDiagnosticExperiment: (DiagnosticExperiment) -> Void
     let isTestingMessage: Bool
     let testResult: TestMessageResult?
     let weeklyAutoKickOverride: WeeklyAutoKickOverride
@@ -100,6 +101,15 @@ struct AccountCardView: View {
                         if weeklyAutoKickOverride == .forceOff { Image(systemName: "checkmark") }
                     }
                 }
+                Divider()
+                Menu("Diagnostic Experiments") {
+                    Button(action: { onRunDiagnosticExperiment(.ephemeralPrompt) }) {
+                        Label("Exp 1: Ephemeral Prompt", systemImage: "bolt.badge.clock")
+                    }
+                    Button(action: { onRunDiagnosticExperiment(.normalSmallTask) }) {
+                        Label("Exp 2: Normal Small Task", systemImage: "terminal")
+                    }
+                }
             }
             Divider()
             Button(action: onReauth) {
@@ -120,7 +130,6 @@ struct AccountCardView: View {
                 .foregroundStyle(theme.textPrimary)
                 .lineLimit(1)
                 .truncationMode(.middle)
-                .layoutPriority(1)
 
             Spacer(minLength: AppSpacing.xs)
 

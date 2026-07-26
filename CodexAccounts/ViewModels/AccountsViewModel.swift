@@ -40,6 +40,7 @@ final class AccountsViewModel {
     var testMessageResults: [String: TestMessageResult] = [:]
     var testMessageLoading: Set<String> = []
     var lastSessionAuditAt: Date? = nil
+    var diagnosticTraces: [ActivationDiagnosticTrace] = []
 
     // Stored so @Observable tracks changes and SwiftUI re-renders immediately
     var menuBarDisplayMode: MenuBarDisplayMode = .iconAndPercent {
@@ -336,6 +337,7 @@ final class AccountsViewModel {
         hasSetup = true
 
         accounts = deduplicatedAccounts(AccountStore.load().map(normalizedAccountOnLoad))
+        diagnosticTraces = DiagnosticStore.loadTraces()
         resetMigrationFailuresIfNeeded()
         normalizePinnedOrder()
         applyAccountStates()
@@ -2005,6 +2007,140 @@ final class AccountsViewModel {
     private func accountIDsConflict(_ lhs: String?, _ rhs: String?) -> Bool {
         guard let lhs, let rhs, !lhs.isEmpty, !rhs.isEmpty else { return false }
         return lhs != rhs
+    }
+
+    // MARK: - Diagnostic Experiments
+
+    func clearDiagnosticTraces() {
+        diagnosticTraces.removeAll()
+        DiagnosticStore.saveTraces([])
+    }
+
+    func runDiagnosticExperiment(for account: CodexAccount, experiment: DiagnosticExperiment) async {
+        let startedAt = Date()
+        let accountIdSuffix = account.accountId?.isEmpty == false
+            ? String(account.accountId!.suffix(8))
+            : String(account.id.suffix(8))
+
+        // Pre-activation snapshot (+0s)
+        await refreshAccount(account, trigger: .manualRefresh)
+        let usageAt0 = usageData[account.id]
+        let preSnapshot = DiagnosticUsageSnapshot(
+            label: "Pre-activation (+0s)",
+            timestamp: startedAt,
+            usedPercent: usageAt0?.activatableWindow?.usedPercent ?? usageAt0?.primaryWindow?.usedPercent,
+            resetAt: usageAt0?.activatableResetAt ?? usageAt0?.primaryWindow?.resetAt,
+            resetAfterSeconds: usageAt0?.activatableWindowSeconds != nil
+                ? Double(usageAt0!.activatableWindowSeconds!)
+                : usageAt0?.primaryWindow?.resetAfterSeconds != nil
+                    ? Double(usageAt0!.primaryWindow!.resetAfterSeconds!)
+                    : nil,
+            planType: account.planType
+        )
+
+        let result = await TestMessageService.sendDiagnosticActivation(
+            account: account,
+            isEphemeral: experiment.isEphemeral,
+            keepRunRoot: true
+        )
+
+        var trace = ActivationDiagnosticTrace(
+            id: UUID(),
+            accountIdSuffix: accountIdSuffix,
+            experimentName: experiment.title,
+            deliveryMethod: result.deliveryMethod,
+            cliVersion: result.cliVersion,
+            exitCode: result.exitCode,
+            outputMessageProduced: result.outputMessageProduced,
+            runRootPath: result.runRootPath,
+            startedAt: startedAt,
+            snapshots: [preSnapshot],
+            status: .inProgress(currentStep: "Waiting for +30s snapshot")
+        )
+
+        diagnosticTraces.insert(trace, at: 0)
+        DiagnosticStore.saveTraces(diagnosticTraces)
+
+        let traceID = trace.id
+
+        func updateTrace(_ transform: (inout ActivationDiagnosticTrace) -> Void) {
+            if let index = diagnosticTraces.firstIndex(where: { $0.id == traceID }) {
+                transform(&diagnosticTraces[index])
+                DiagnosticStore.saveTraces(diagnosticTraces)
+            }
+        }
+
+        // Snapshot +30s
+        try? await Task.sleep(for: .seconds(30))
+        if let current = currentAccount(id: account.id) {
+            await refreshAccount(current, trigger: .manualRefresh)
+        }
+        let usageAt30 = usageData[account.id]
+        let snap30 = DiagnosticUsageSnapshot(
+            label: "+30s",
+            timestamp: Date(),
+            usedPercent: usageAt30?.activatableWindow?.usedPercent ?? usageAt30?.primaryWindow?.usedPercent,
+            resetAt: usageAt30?.activatableResetAt ?? usageAt30?.primaryWindow?.resetAt,
+            resetAfterSeconds: usageAt30?.activatableWindowSeconds != nil
+                ? Double(usageAt30!.activatableWindowSeconds!)
+                : usageAt30?.primaryWindow?.resetAfterSeconds != nil
+                    ? Double(usageAt30!.primaryWindow!.resetAfterSeconds!)
+                    : nil,
+            planType: currentAccount(id: account.id)?.planType ?? account.planType
+        )
+
+        updateTrace { t in
+            t.snapshots.append(snap30)
+            t.status = .inProgress(currentStep: "Waiting for +2m snapshot")
+        }
+
+        // Snapshot +2m (90s after +30s)
+        try? await Task.sleep(for: .seconds(90))
+        if let current = currentAccount(id: account.id) {
+            await refreshAccount(current, trigger: .manualRefresh)
+        }
+        let usageAt2m = usageData[account.id]
+        let snap2m = DiagnosticUsageSnapshot(
+            label: "+2m",
+            timestamp: Date(),
+            usedPercent: usageAt2m?.activatableWindow?.usedPercent ?? usageAt2m?.primaryWindow?.usedPercent,
+            resetAt: usageAt2m?.activatableResetAt ?? usageAt2m?.primaryWindow?.resetAt,
+            resetAfterSeconds: usageAt2m?.activatableWindowSeconds != nil
+                ? Double(usageAt2m!.activatableWindowSeconds!)
+                : usageAt2m?.primaryWindow?.resetAfterSeconds != nil
+                    ? Double(usageAt2m!.primaryWindow!.resetAfterSeconds!)
+                    : nil,
+            planType: currentAccount(id: account.id)?.planType ?? account.planType
+        )
+
+        updateTrace { t in
+            t.snapshots.append(snap2m)
+            t.status = .inProgress(currentStep: "Waiting for +10m snapshot")
+        }
+
+        // Snapshot +10m (480s after +2m)
+        try? await Task.sleep(for: .seconds(480))
+        if let current = currentAccount(id: account.id) {
+            await refreshAccount(current, trigger: .manualRefresh)
+        }
+        let usageAt10m = usageData[account.id]
+        let snap10m = DiagnosticUsageSnapshot(
+            label: "+10m",
+            timestamp: Date(),
+            usedPercent: usageAt10m?.activatableWindow?.usedPercent ?? usageAt10m?.primaryWindow?.usedPercent,
+            resetAt: usageAt10m?.activatableResetAt ?? usageAt10m?.primaryWindow?.resetAt,
+            resetAfterSeconds: usageAt10m?.activatableWindowSeconds != nil
+                ? Double(usageAt10m!.activatableWindowSeconds!)
+                : usageAt10m?.primaryWindow?.resetAfterSeconds != nil
+                    ? Double(usageAt10m!.primaryWindow!.resetAfterSeconds!)
+                    : nil,
+            planType: currentAccount(id: account.id)?.planType ?? account.planType
+        )
+
+        updateTrace { t in
+            t.snapshots.append(snap10m)
+            t.status = .completed
+        }
     }
 }
 
