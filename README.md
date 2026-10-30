@@ -2,6 +2,8 @@
 
 A macOS menu bar app that tracks [Codex CLI](https://github.com/openai/codex) usage across multiple OpenAI accounts.
 
+🔗 **Landing Page**: [sameerbajaj.com/tools/codex-accounts](https://sameerbajaj.com/tools/codex-accounts)
+
 ## What it does
 
 The Codex CLI has two rate limits: a rolling 5-hour window and a weekly window. When you hit either one, requests start failing. If you juggle multiple OpenAI accounts, it's hard to know at a glance which one still has quota left.
@@ -103,6 +105,10 @@ The only network requests are to `chatgpt.com/backend-api/wham/usage` to fetch u
 
 Account data (including tokens) is stored locally in `~/Library/Application Support/CodexAccounts/accounts.json` and each account's isolated `auth.json` under `~/Library/Application Support/CodexAccounts/CodexHomes/`. Nothing else leaves your machine.
 
+## Author
+
+Created by [Sameer Bajaj](https://sameerbajaj.com).
+
 ## License
 
-MIT
+[MIT](LICENSE) © 2026 [Sameer Bajaj](https://sameerbajaj.com)
